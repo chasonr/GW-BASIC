@@ -930,7 +930,7 @@ FCERRA:	JMP	FCERR
 	PAGE	
 	SUBTTL  KILL, FILES, NAME commands
 
-	PUBLIC	FILES,KILL,NAME
+	PUBLIC	FILES,KILL,NAME_
 	EXTRN	FRMEVL:NEAR,FRESTR:NEAR,CRDO:NEAR,POLKEY:NEAR
 DSEG	SEGMENT PUBLIC 'DATASG'
 	EXTRN	LINLEN:WORD,BUF:WORD
@@ -1045,7 +1045,7 @@ KILL2:	POP	DX		;DX points to FCB
 ; Entry - [BX] = text pointer
 ; Exit  - [BX] = text pointer
 ;
-NAME:
+NAME_:
 	CALL	NAMFIL		;[SI] points to 1st byte of old filename
 				;[CX] = number of bytes in filename
 	PUSH	BX		;save text pointer
