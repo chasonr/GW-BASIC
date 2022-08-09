@@ -115,7 +115,7 @@ m   macro
     purge m
     n
 endm
-?&s macro
+?&s &macro
 &endm
 endm
 
