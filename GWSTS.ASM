@@ -1926,7 +1926,7 @@ PUTCH2:
 ;
 PRSDAT:
 	CALL	SYNCHR
-	DB	OFFSET EQULTK	;Must be DATE$ = string
+	DB	LOW OFFSET EQULTK	;Must be DATE$ = string
 	CALL	FRMEVL
 	PUSH	BX		;Save Text pointer
 	CALL	FRESTR
@@ -2161,7 +2161,7 @@ TIMEF:
 ;
 PRSTIM:
 	CALL	SYNCHR
-	DB	OFFSET EQULTK	;Must be TIME$ = string
+	DB	LOW OFFSET EQULTK	;Must be TIME$ = string
 	CALL	FRMEVL
 	PUSH	BX		;Save Text pointer
 	CALL	FRESTR

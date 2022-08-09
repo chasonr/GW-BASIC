@@ -187,11 +187,11 @@ CKCMER:
 ERROR1:	JMP	ERROR
 
 CMERRT:
-	DB	OFFSET ERRCBO	;buffer overflow error
-	DB	OFFSET ERRDPE	;parity error
-	DB	OFFSET ERRDTO	;device timeout
-	DB	OFFSET ERRDTO	;device timeout
-	DB	OFFSET ERRDTO	;device timeout
+	DB	LOW OFFSET ERRCBO	;buffer overflow error
+	DB	LOW OFFSET ERRDPE	;parity error
+	DB	LOW OFFSET ERRDTO	;device timeout
+	DB	LOW OFFSET ERRDTO	;device timeout
+	DB	LOW OFFSET ERRDTO	;device timeout
 	PAGE	
 	SUBTTL  COM OPEN
 ;
