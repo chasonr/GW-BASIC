@@ -17,6 +17,10 @@ The Open Watcom WLINK program links the files to form a non-functioning GW-BASIC
 
 The original code has a number of unresolved external symbols, for such things as graphics that were left to the vendor to customize. The source file stubs.asm contains stubs for the missing functions.
 
+## Tags
+
+The "MASM" tag points to a version of the source that assembles and links with MASM 3.01, and has the fewest changes possible from the original to meet that goal.
+
 ## License
 
 All files within this repo are released under the [MIT (OSI) License]( https://en.wikipedia.org/wiki/MIT_License) as per the [LICENSE file](https://github.com/Microsoft/GW-BASIC/blob/master/LICENSE) stored in the root of this repo.
