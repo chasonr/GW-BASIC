@@ -403,7 +403,7 @@ FILLS1:
 SINP50:				;Serial Input from Random File
 	PUSH	BX
 	CALL	FOVCHK		;Field overflow check
-	MOV	AL,BYTE PTR FD_DAT-1[BX+SI]	;Get character
+	MOV	AL,BYTE PTR (FD_DAT-1)[BX+SI]	;Get character
 	CLC	
 	POP	BX
 	RET	
@@ -431,7 +431,7 @@ DSKSOT:
 	JNZ	FILOU4		;branch if sequential access
 	PUSH	BX		;Do Serial output to random
 	CALL	FOVCHK		;check for FIELD overflow
-	MOV	BYTE PTR FD_DAT-1[BX+SI],AL	;store character
+	MOV	BYTE PTR (FD_DAT-1)[BX+SI],AL	;store character
 	POP	BX
 	JMP	SHORT SOUTPS	;Update posn and exit
 FILOU4:
@@ -1149,7 +1149,7 @@ NAMORE:	OR	CX,CX		;Anything left?
 	INC	AH		;No, increment the name character count.
 	JMP	SHORT NAMORE	;Go look at the next char.
 
-LNGNAM:	MOV	BYTE PTR -1[DI],LOW "."	;Put in the dot so the extra chars look
+LNGNAM:	MOV	BYTE PTR (-1)[DI],LOW "."	;Put in the dot so the extra chars look
 	MOV	BYTE PTR 0[DI],AL	;like an extension.
 	INC	DI
 FINNAM:	OR	CX,CX		;Anything left?

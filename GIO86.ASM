@@ -2072,7 +2072,7 @@ DOALDV:	MOV	AL,LOW OFFSET $_NDEV
 	MOV	DI,AX		;[DI]=2*number of non-disk devices
 DOALLP:	PUSH	BX
 	PUSH	DI
-	CALL	 WORD PTR CS:-2[BX+DI]	;Call initialization/termination routine
+	CALL	 WORD PTR CS:(-2)[BX+DI]	;Call initialization/termination routine
 	POP	DI
 	POP	BX
 	DEC	DI

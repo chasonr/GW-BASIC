@@ -279,8 +279,8 @@ SCNRDT:	PUSH	BX
 	ADD	BL,BL
 	MOV	BH,LOW 0
 	MOV	WORD PTR TRMCUR,BX	; Save address of terminator reading(for set term)
-	MOV	AH,BYTE PTR LINTTB-2[BX]	; Get terminator posn
-	MOV	AL,BYTE PTR LINTTB-1[BX]	; Get terminator value
+	MOV	AH,BYTE PTR (LINTTB-2)[BX]	; Get terminator posn
+	MOV	AL,BYTE PTR (LINTTB-1)[BX]	; Get terminator value
 	AND	AL,LOW OFFSET 377O-TRMNUL	; Get rid of initialize line status bit
 	CMP	AL,LOW OFFSET TRMEOL
 	STC	
@@ -300,9 +300,9 @@ SCNRTX:	POP	BX
 ;**
 SCNWTT:	PUSH	BX
 	MOV	BX,WORD PTR TRMCUR	; Get address of terminator last read
-	MOV	BYTE PTR LINTTB-2[BX],AH
-	AND	BYTE PTR LINTTB-1[BX],LOW OFFSET TRMNUL
-	OR	BYTE PTR LINTTB-1[BX],AL	; Write new terminator, leaving NULL bit
+	MOV	BYTE PTR (LINTTB-2)[BX],AH
+	AND	BYTE PTR (LINTTB-1)[BX],LOW OFFSET TRMNUL
+	OR	BYTE PTR (LINTTB-1)[BX],AL	; Write new terminator, leaving NULL bit
 	POP	BX
 	RET	
 ;** END SUBROUTINE SCNWTT
@@ -746,12 +746,12 @@ SCRUTT:	PUSH	DX
 	MOV	BX,WORD PTR TRMCUR
 	MOV	CH,LOW 0
 SCRUTL:	MOV	AX,WORD PTR LINTTB[BX]	; Get a terminator
-	MOV	WORD PTR LINTTB-2[BX],AX	; Save a terminator
+	MOV	WORD PTR (LINTTB-2)[BX],AX	; Save a terminator
 	INC	BX
 	INC	BX
 	LOOP	SCRUTL		; Continue till done
-	MOV	BYTE PTR LINTTB-2[BX],LOW 0	; Terminate end line of scroll
-	MOV	BYTE PTR LINTTB-1[BX],LOW OFFSET TRMEOL
+	MOV	BYTE PTR (LINTTB-2)[BX],LOW 0	; Terminate end line of scroll
+	MOV	BYTE PTR (LINTTB-1)[BX],LOW OFFSET TRMEOL
 	POP	DX
 	RET	
 
@@ -767,11 +767,11 @@ SCRDTT:
 	MOV	BX,WORD PTR TRMCUR
 	MOV	CH,LOW 0
 SCRDTL:	SUB	BX,2		; Next posn
-	MOV	AX,WORD PTR LINTTB-2[BX]	; Get a terminator
+	MOV	AX,WORD PTR (LINTTB-2)[BX]	; Get a terminator
 	MOV	WORD PTR LINTTB[BX],AX	; Save a terminator
 	LOOP	SCRDTL		; Continue till done
-	MOV	BYTE PTR LINTTB-2[BX],LOW 0	; Terminate end line of scroll
-	MOV	BYTE PTR LINTTB-1[BX],LOW OFFSET TRMEOL
+	MOV	BYTE PTR (LINTTB-2)[BX],LOW 0	; Terminate end line of scroll
+	MOV	BYTE PTR (LINTTB-1)[BX],LOW OFFSET TRMEOL
 	MOV	DL,BYTE PTR WDOBOT
 	CALL	SCNRTL
 	JB	SCRDT1		; EOL term'd, all done
@@ -792,8 +792,8 @@ PLINIT:	PUSH	CX
 	DEC	AH
 	PUSH	BX
 	MOV	BX,WORD PTR TRMCUR	; Terminate line to left of DH
-	MOV	BYTE PTR LINTTB-1[BX],LOW OFFSET TRMEOL
-	MOV	BYTE PTR LINTTB-2[BX],AH
+	MOV	BYTE PTR (LINTTB-1)[BX],LOW OFFSET TRMEOL
+	MOV	BYTE PTR (LINTTB-2)[BX],AH
 	POP	BX
 	POP	AX
 PLINI2:	CALL	CLREOL		; Clear to end of line from (DH,DL)
@@ -866,7 +866,7 @@ SCNMK0:	CALL	CSRUP		; Move to previous line
 SCNMK1:	CALL	SCNRDT
 	PUSH	BX
 	MOV	BX,WORD PTR TRMCUR
-	TEST	BYTE PTR LINTTB-1[BX],LOW OFFSET TRMNUL
+	TEST	BYTE PTR (LINTTB-1)[BX],LOW OFFSET TRMNUL
 	JZ	SCNMK2		; BRIF not specially marked line
 	PUSH	DX
 	PUSH	CX
@@ -1084,7 +1084,7 @@ CTLNDL:	CMP	AL,LOW 255D
 	PUSH	BX
 	CALL	SCNRDT
 	MOV	BX,WORD PTR TRMCUR
-	OR	BYTE PTR LINTTB-1[BX],LOW OFFSET TRMNUL	; Set "not for input" flag on this line
+	OR	BYTE PTR (LINTTB-1)[BX],LOW OFFSET TRMNUL	; Set "not for input" flag on this line
 	POP	BX
 	POP	AX
 ;       STC

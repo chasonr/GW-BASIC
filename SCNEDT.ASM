@@ -417,7 +417,7 @@ LOPBUF:	CALL	INCHR		; Get a character from the file
 	MOV	BYTE PTR 0[BX],AL	; Store the character
 	CMP	AL,LOW 13D	; Is it the end (a CR)
 	JNZ	INOTCR		; Not a [CR]
-	CMP	BYTE PTR -1[BX],LOW 10D	; Preceeded by a line feed?
+	CMP	BYTE PTR (-1)[BX],LOW 10D	; Preceeded by a line feed?
 	JZ	LOPBUF		; Yes, ignore the [CR]
 	JMP	SHORT FINLIN	; No, this is the end of a line
 INOTCR:
