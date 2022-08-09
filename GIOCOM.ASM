@@ -186,7 +186,8 @@ CKCMER:
 	MOV	DL,LOW OFFSET ERRDIO	;map all other error codes to I/O error
 ERROR1:	JMP	ERROR
 
-CMERRT:	DB	OFFSET ERRCBO	;buffer overflow error
+CMERRT:
+	DB	OFFSET ERRCBO	;buffer overflow error
 	DB	OFFSET ERRDPE	;parity error
 	DB	OFFSET ERRDTO	;device timeout
 	DB	OFFSET ERRDTO	;device timeout

@@ -35,7 +35,8 @@ NMPAGE=1
 
 HEDING:	ACRLF	
 	DB	"(C) Copyright Microsoft 1982"
-$DATE:	DB	"         "	;$DATE
+$DATE:
+	DB	"         "	;$DATE
 	ACRLF	
 	DB	00O		;Terminate previous string.
 
