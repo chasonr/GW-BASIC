@@ -141,7 +141,7 @@ maclng.obj : maclng.asm
 
 math.obj : math.asm
 	$(JWASM) math.asm
-math.asm : math1.asm
+math.asm: math1.asm math2.asm
 	@type math1.asm math2.asm >math.asm
 
 next86.obj : next86.asm
