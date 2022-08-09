@@ -1,0 +1,164 @@
+MASM_PATH = c:\masm\3.01
+
+OFILES = &
+gwinit.obj &
+advgrp.obj &
+biboot.obj &
+bimisc.obj &
+biprtu.obj &
+biptrg.obj &
+bistrs.obj &
+call86.obj &
+dskcom.obj &
+fiveo.obj &
+gengrp.obj &
+gio86.obj &
+giocas.obj &
+giocom.obj &
+giocon.obj &
+giodsk.obj &
+giokyb.obj &
+giolpt.obj &
+gioscn.obj &
+giotbl.obj &
+gwdata.obj &
+gweval.obj &
+gwlist.obj &
+gwmain.obj &
+gwram.obj &
+gwsts.obj &
+ibmres.obj &
+itsa86.obj &
+kanj86.obj &
+maclng.obj &
+math.obj &
+next86.obj &
+scndrv.obj &
+scnedt.obj &
+stubs.obj
+
+EXE = gw-basic.exe
+
+ASM = $(MASM_PATH)\masm.exe
+
+$(EXE) : $(OFILES)
+	@echo Linking...
+	@echo system dos >objs.txt
+	@for %x in ($(OFILES)) do echo file %x >>objs.txt
+	@echo option map >>objs.txt
+	@echo name $(EXE) >>objs.txt
+	@wlink @objs.txt
+
+advgrp.obj : advgrp.asm
+	$(ASM) advgrp advgrp nul nul
+
+biboot.obj : biboot.asm
+	$(ASM) biboot biboot nul nul
+
+bimisc.obj : bimisc.asm
+	$(ASM) bimisc bimisc nul nul
+
+biprtu.obj : biprtu.asm
+	$(ASM) biprtu biprtu nul nul
+
+biptrg.obj : biptrg.asm
+	$(ASM) biptrg biptrg nul nul
+
+bistrs.obj : bistrs.asm
+	$(ASM) bistrs bistrs nul nul
+
+call86.obj : call86.asm
+	$(ASM) call86 call86 nul nul
+
+dskcom.obj : dskcom.asm
+	$(ASM) dskcom dskcom nul nul
+
+fiveo.obj : fiveo.asm
+	$(ASM) fiveo fiveo nul nul
+
+gengrp.obj : gengrp.asm
+	$(ASM) gengrp gengrp nul nul
+
+gio86.obj : gio86.asm
+	$(ASM) gio86 gio86 nul nul
+
+giocas.obj : giocas.asm
+	$(ASM) giocas giocas nul nul
+
+giocom.obj : giocom.asm
+	$(ASM) giocom giocom nul nul
+
+giocon.obj : giocon.asm
+	$(ASM) giocon giocon nul nul
+
+giodsk.obj : giodsk.asm
+	$(ASM) giodsk giodsk nul nul
+
+giokyb.obj : giokyb.asm
+	$(ASM) giokyb giokyb nul nul
+
+giolpt.obj : giolpt.asm
+	$(ASM) giolpt giolpt nul nul
+
+gioscn.obj : gioscn.asm
+	$(ASM) gioscn gioscn nul nul
+
+giotbl.obj : giotbl.asm
+	$(ASM) giotbl giotbl nul nul
+
+gwdata.obj : gwdata.asm
+	$(ASM) gwdata gwdata nul nul
+
+gweval.obj : gweval.asm
+	$(ASM) gweval gweval nul nul
+
+gwinit.obj : gwinit.asm
+	$(ASM) gwinit gwinit gwinit nul
+
+gwlist.obj : gwlist.asm
+	$(ASM) gwlist gwlist nul nul
+
+gwmain.obj : gwmain.asm
+	$(ASM) gwmain gwmain nul nul
+
+gwram.obj : gwram.asm
+	$(ASM) gwram gwram nul nul
+
+gwsts.obj : gwsts.asm
+	$(ASM) gwsts gwsts nul nul
+
+ibmres.obj : ibmres.asm
+	$(ASM) ibmres ibmres nul nul
+
+itsa86.obj : itsa86.asm
+	$(ASM) itsa86 itsa86 nul nul
+
+kanj86.obj : kanj86.asm
+	$(ASM) kanj86 kanj86 nul nul
+
+maclng.obj : maclng.asm
+	$(ASM) maclng maclng nul nul
+
+math.obj : math.asm
+	$(ASM) math math nul nul
+math.asm: math1.asm math2.asm
+	@type math1.asm math2.asm >math.asm
+
+next86.obj : next86.asm
+	$(ASM) next86 next86 nul nul
+
+scndrv.obj : scndrv.asm
+	$(ASM) scndrv scndrv nul nul
+
+scnedt.obj : scnedt.asm
+	$(ASM) scnedt scnedt nul nul
+
+stubs.obj : stubs.asm
+	$(ASM) stubs stubs nul nul
+
+clean: .SYMBOLIC
+	-del *.obj
+	-del $(EXE)
+	-del *.map
+	-del objs.txt
+	-del math.asm
