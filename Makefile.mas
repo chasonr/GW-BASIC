@@ -113,7 +113,7 @@ gweval.obj : gweval.asm
 	$(ASM) gweval gweval nul nul
 
 gwinit.obj : gwinit.asm
-	$(ASM) gwinit gwinit gwinit nul
+	$(ASM) gwinit gwinit nul nul
 
 gwlist.obj : gwlist.asm
 	$(ASM) gwlist gwlist nul nul
