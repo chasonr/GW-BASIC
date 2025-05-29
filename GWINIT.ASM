@@ -73,32 +73,30 @@ INIT:
 ; of CODESG for this to work.  No error will be generated, so be careful.
 ;
 	EXTRN	BEGDSG:NEAR	;Beg. of the data segment, offset from CS
-	INS86	272,,BEGDSG	;MOVI DX,BEGDSP
-	INS86	261,4		;MOVI CL,4   Divide by 16 to ...
-	INS86	323,352		;SHR  DX,CL  get paragraph address
-	INS86	214,311		;MOV  CX,CS  add in code segment
-	INS86	3,321		;ADD  DX,CS
-	INS86	264,46		;MOVBI AH,38 SPECIAL FUNCTION TO CALC END
-				;            OF CS AND RETURN START OF DS
-	INS86	315,41		;INT  33     CALL SCP DOS
-	INS86	214,330		;MOV  AX,DS  SAVE DS FOR EXIT VECTOR
-	INS86	216,332		;MOV  DS,DX  SET UP SEG REGS
-	INS86	216,302		;MOV  ES,DX
+	MOV	DX,OFFSET BEGDSG
+	MOV	CL,4		;Divide by 16 to ...
+	SHR	DX,CL		;get paragraph address
+	MOV	CX,CS		;add in code segment
+	ADD	DX,CX
+	MOV	AH,26H		;SPECIAL FUNCTION TO CALC END
+				;OF CS AND RETURN START OF DS
+	INT	21H		;CALL SCP DOS
+	MOV	AX,DS		;SAVE DS FOR EXIT VECTOR
+	MOV	DS,DX		;SET UP SEG REGS
+	MOV	ES,DX
 ;Initialize the jump vector for exit to MSDOS.  MSDOS 2.0 requires that
 ; exit is made through the segment prefix table which is located at DS:0.
 ; For .EXE files, DS is not the same as CS at program initiation time (NOW).
 DSEG	SEGMENT PUBLIC 'DATASG'
 	EXTRN	CPMEXT:WORD
 DSEG	ENDS
-	INS86	307,6,CPMEXT	;MOVI CPMEXT,^D0
-	INS86	0,0		;            INS86 has 4 params
-				;            & some may not be words
-	INS86	220,243,CPMEXT+2	;NOP         NOP - pad to item 3 of INS86
-				;MOV  CPMEXT+2,AX
+	MOV	CPMEXT,0
+	NOP
+	MOV	CPMEXT+2,AX
 	CLI			;Setting the stack segment and stack
 				;pointer must be an indivisable
 				;operation.
-	INS86	216,322		;MOV SS,DX
+	MOV	SS,DX
 	MOV	BX,OFFSET BUF+128D	;Use BUF for a temporary stack.
 	MOV	MEMSIZ,BX
 	MOV	SP,BX
@@ -114,7 +112,8 @@ DSEG	ENDS
 	MOV	BX,OFFSET RAMLOW	;WHERE THE CONSTANTS ARE STORE IN RAM
 	MOV	DX,OFFSET CONSTR	;WHERE THE CONSTANTS ARE HELD IN ROM
 MORMOV:				;MOVE ROM INITIALIZATION VALUES TO RAM
-	INS86	213,362,56,254	;CODE SEGMENT FETCH
+	MOV	SI,DX		;CODE SEGMENT FETCH
+	LODSB	CS:[SI]
 	MOV	BYTE PTR [BX],AL	;STORE IT AWAY IN RAM
 	INC	BX
 	INC	DX
@@ -357,7 +356,7 @@ NXTBYT:	MOV	AL,BYTE PTR [BX]	;File name character
 	JMP	OMERRR
 ??L003:
 	MOV	CL,LOW 3	;SHIFT RIGHT THREE BITS (DIVIDE BY 8)
-	INS86	323,353		;SHR BX,CL
+	SHR	BX,CL
 	MOV	AL,BH		;SEE HOW MUCH
 	CMP	AL,LOW 2	;IF LESS THAN 512 USE 1 EIGHTH
 	JB	SHORT SMLSTK

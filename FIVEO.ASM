@@ -150,7 +150,7 @@ FNDWN3:	MOV	CX,OFFSET $WHILE
 	CMP	AL,CL
 	JZ	SHORT $+3
 	RET
-	INS86	71,27		;CMP [BX],DX-SAME WEND?
+	CMP	[BX],DX		;SAME WEND?
 	MOV	CX,OFFSET WHLSIZ-1	;Note that the pointer has
 				;already been incremented once.
 	JNZ	SHORT $+3

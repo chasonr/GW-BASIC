@@ -556,12 +556,12 @@ GRPINI:	CALL	GRPSIZ		;Get screen pixel dimensions
 	PUSH	CX		;B,C has X dimension
 	POP	BX		;Move X dimension to H
 	INC	BX		;Adjust for zero relative
-	INS86	321,353		;;SHR BX,1
+	SHR	BX,1
 	MOV	GRPACX,BX	;Store as previous position
 	PUSH	DX		;D,E has Y dimension
 	POP	BX		;Move Y dimension to H
 	INC	BX
-	INS86	321,353		;;SHR BX,1
+	SHR	BX,1
 	MOV	GRPACY,BX	;Store as previous position
 	RET	
 
