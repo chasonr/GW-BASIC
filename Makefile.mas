@@ -1,49 +1,50 @@
 MASM_PATH = c:\masm\3.01
 
 OFILES = &
-gwinit.obj &
-advgrp.obj &
-biboot.obj &
-bimisc.obj &
-biprtu.obj &
-biptrg.obj &
-bistrs.obj &
-call86.obj &
-dskcom.obj &
-fiveo.obj &
-gengrp.obj &
-gio86.obj &
-giocas.obj &
-giocom.obj &
-giocon.obj &
-giodsk.obj &
-giokyb.obj &
-giolpt.obj &
-gioscn.obj &
-giotbl.obj &
 gwdata.obj &
+gwmain.obj &
+stubs.obj &
 gweval.obj &
 gwlist.obj &
-gwmain.obj &
-gwram.obj &
-gwsts.obj &
 ibmres.obj &
-itsa86.obj &
-kanj86.obj &
+bimisc.obj &
+dskcom.obj &
+biptrg.obj &
+biprtu.obj &
+bistrs.obj &
+fiveo.obj &
+gengrp.obj &
+advgrp.obj &
 maclng.obj &
-math.obj &
-next86.obj &
-scndrv.obj &
+gwsts.obj &
+gio86.obj &
+giodsk.obj &
+giokyb.obj &
+gioscn.obj &
+giolpt.obj &
+giocom.obj &
+giocon.obj &
+giotbl.obj &
 scnedt.obj &
-stubs.obj
+scndrv.obj &
+call86.obj &
+next86.obj &
+math.obj &
+kanj86.obj &
+giocas.obj &
+itsa86.obj &
+gwram.obj &
+gwinit.obj &
+biboot.obj
 
-EXE = gw-basic.exe
+EXE = gwbasic.exe
 
 ASM = $(MASM_PATH)\masm.exe
 
 $(EXE) : $(OFILES)
 	@echo Linking...
 	@echo system dos >objs.txt
+	@echo option packdata=0 >>objs.txt
 	@for %x in ($(OFILES)) do echo file %x >>objs.txt
 	@echo option map >>objs.txt
 	@echo name $(EXE) >>objs.txt
