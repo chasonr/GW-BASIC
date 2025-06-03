@@ -3,7 +3,7 @@ MASM_PATH = c:\masm\3.01
 OFILES = &
 gwdata.obj &
 gwmain.obj &
-stubs.obj &
+oem.obj &
 gweval.obj &
 gwlist.obj &
 ibmres.obj &
@@ -154,8 +154,8 @@ scndrv.obj : scndrv.asm
 scnedt.obj : scnedt.asm
 	$(ASM) scnedt scnedt nul nul
 
-stubs.obj : stubs.asm
-	$(ASM) stubs stubs nul nul
+oem.obj : oem.asm
+	$(ASM) oem oem nul nul
 
 clean: .SYMBOLIC
 	-del *.obj

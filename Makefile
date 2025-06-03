@@ -3,7 +3,7 @@ JWASM_PATH = c:\devel\jwasm
 OFILES = &
 gwdata.obj &
 gwmain.obj &
-stubs.obj &
+oem.obj &
 gweval.obj &
 gwlist.obj &
 ibmres.obj &
@@ -154,8 +154,8 @@ scndrv.obj : scndrv.asm
 scnedt.obj : scnedt.asm
 	$(JWASM) scnedt.asm
 
-stubs.obj : stubs.asm
-	$(JWASM) stubs.asm
+oem.obj : oem.asm
+	$(JWASM) oem.asm
 
 clean: .SYMBOLIC
 	-del *.obj
