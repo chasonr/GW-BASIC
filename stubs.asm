@@ -284,7 +284,6 @@ SETFBC:
 ;          byte 0: characters per key
 ;          byte 1: number of keys to display
 ;          byte 2: number of first function key
-FKYFMT:
 PUBLIC FKYFMT
 FKYFMT:
     INT 3
@@ -652,7 +651,6 @@ RDSTIK:
 
 ; Test for trappable events
 ; Return: Z clear if any event occurred
-POLLEV:
 PUBLIC POLLEV
 POLLEV:
     INT 3
