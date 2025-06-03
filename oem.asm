@@ -1,5 +1,8 @@
-CSEG	SEGMENT PUBLIC 'CODESG' 
-	ASSUME  CS:CSEG
+CSEG	segment public 'CODESG' 
+	assume  cs:CSEG, ds:DSEG
+
+extrn SCNSWI:near
+extrn GRPINI:near
 
 ;-----------------------------------------------------------------------------
 ; Initialization and termination
@@ -13,15 +16,36 @@ CSEG	SEGMENT PUBLIC 'CODESG'
 ; support may be available. Any interrupt handlers needed can be installed
 ; here.
 PUBLIC GWINI
+; TODO: Query video hardware and determine supported modes.
+; For now, we support only text mode in 80x25.
 GWINI:
-    INT 3
+    push ax
+    push cx
+
+    ; Assume we're in text mode at 80 x 25
+    mov  al,80
+    mov  cl,25
+    call SCNSWI
+
+    call GRPINI
+
+    pop cx
+    pop ax
+    ret
 
 ; Get OEM header string
 ; On entry: none
-; Returns: BX = offset of header string to be printed at start
+; Returns: Z set if a header string is provided
+;          If Z set:
+;              BX = Offset from CS of header string to be printed at start
+;                   String ends in a null character
 PUBLIC GETHED
 GETHED:
-    INT 3
+    xor bx, bx                  ; Set Z to indicate a header string is provided
+    mov bx, offset oem_header   ; Address of the header string
+    ret
+
+oem_header db "Open source version copyright 2025 Ray Chason.", 0Dh, 0Ah, 0
 
 ; Copy code segment to new location
 ; On entry: DS = ES = SS = NEWDS, the new data segment
@@ -77,7 +101,11 @@ EDTMAP:
 ;           AH = 0x00 and C clear otherwise
 PUBLIC PRTMAP
 PRTMAP:
-    INT 3
+    ; TODO: This is a bare minimum function
+    mov ah, 0
+    or al, al
+    clc
+    ret
 
 ; Map key for input via INKEY$
 ; On entry: C set and AL and DX set as from KEYINP
@@ -117,7 +145,11 @@ MAPSUP:
 ; No caller checks the C flag
 PUBLIC SCROUT
 SCROUT:
-    INT 3
+    ; TODO: set the cursor position, page and attribute
+    mov al, 09h
+    mov bx, 0007h
+    int 10h
+    ret
 
 ; Read a character from the screen
 ; On entry:
@@ -177,10 +209,48 @@ CSRATR:
 ;                2 = overwrite mode (smaller)
 ;                3 = user mode
 ;           DX = cursor position: 1-based (column, row)
+;                It is uncertain that DX is set
 ; Returns: none
 PUBLIC CSRDSP
 CSRDSP:
-    INT 3
+    push ax
+    push bx
+    push cx
+
+    ; TODO: For now, assume 16 line character
+    cmp al, 0
+    jne @F
+        mov cx, 1F1Fh ; start line 31, end line 31
+        jmp set_cursor
+    @@:
+    cmp al, 1
+    jne @F
+        mov cx, 000Dh ; start line 0, end line 13
+        jmp set_cursor
+    @@:
+    cmp al, 2
+    jne @F
+        mov cx, 0B0Dh ; start line 11, end line 13
+        jmp set_cursor
+    @@:
+        mov cx, cursor_shape
+    set_cursor:
+    mov cursor_shape, cx
+
+    ; According to the Ralf Brown Interrupt List, some BIOSes lock up if
+    ; AL is not equal to the video mode
+    mov ah, 0Fh
+    int 10h     ; AL <- video mode
+
+    ; Set the cursor shape
+    mov ah, 01h
+    int 10h
+
+    pop cx
+    pop bx
+    pop ax
+    ret
+
 
 ; Print the screen
 ; On entry: none
@@ -269,7 +339,12 @@ PEKFLT:
 ;          BX = background color
 PUBLIC GETFBC
 GETFBC:
-    INT 3
+    ; TODO: honor the C flag
+    mov al, foreground_color
+    mov ah, 0
+    mov bl, background_color
+    mov bh, 0
+    ret
 
 ; Set foreground and background colors
 ; On entry: AX = foreground color
@@ -277,7 +352,9 @@ GETFBC:
 ; Returns: none
 PUBLIC SETFBC
 SETFBC:
-    INT 3
+    mov foreground_color, al
+    mov background_color, bl
+    ret
 
 ; Return format for function key display
 ; Returns: BX points to a three byte structure
@@ -286,7 +363,12 @@ SETFBC:
 ;          byte 2: number of first function key
 PUBLIC FKYFMT
 FKYFMT:
-    INT 3
+    ; Stub: fixed format for 80 column display
+    mov bx, offset fkey_format
+    mov byte ptr 0[bx], 6
+    mov byte ptr 1[bx], 10
+    mov byte ptr 2[bx], 1
+    ret
 
 ; Unclear what this does. It seems to depend on Z set or clear and have
 ; to do with display of function keys.
@@ -295,7 +377,12 @@ FKYFMT:
 ; not displayed.
 PUBLIC FKYADV
 FKYADV:
-    INT 3
+    ; Stub: just clear Z
+    push ax
+    mov ax, 1
+    or ax, ax
+    pop ax
+    ret
 
 ;-----------------------------------------------------------------------------
 ; Graphics mode screen support
@@ -306,7 +393,10 @@ FKYADV:
 ;          DX = maximum Y coordinate
 PUBLIC GRPSIZ
 GRPSIZ:
-    INT 3
+    ; TODO: For now, we support only 80x25 text mode, but GRPINI calls this
+    mov cx,80*8 - 1
+    mov dx,25*8 - 1
+    ret
 
 ; Set a cursor position retrieved from FETCHC
 ; On entry: AL:BX = cursor position
@@ -373,7 +463,10 @@ MAPXYC:
 ; Returns:  none
 PUBLIC SETATR
 SETATR:
-    INT 3
+    ; TODO: Graphics modes are not yet supported. For 16 color EGA and VGA
+    ; modes, set the hardware registers here.
+    mov graph_attr, al
+    ret
 
 ; Read pixel at current position
 ; Returns: AL = pixel attribute
@@ -498,7 +591,8 @@ SCANL:
 ; Returns: C set on error
 PUBLIC DONOTE
 DONOTE:
-    INT 3
+    ; TODO: The speaker is not yet implemented, but SNDRST calls this
+    ret
 
 ;-----------------------------------------------------------------------------
 ; Support for COMx ports
@@ -511,7 +605,9 @@ DONOTE:
 ; Returns:  C set if error
 PUBLIC SETCBF
 SETCBF:
-    INT 3
+    ; TODO COMx ports not yet supported
+    clc
+    ret
 
 ; Set up COMx port
 ; On entry: AH = unit number; 0 for COM1, 1 for COM2
@@ -656,4 +752,22 @@ POLLEV:
     INT 3
 
 CSEG ENDS
+
+DSEG segment public 'DATASG'
+
+; Function key format returned by FKYFMT
+fkey_format db 3 dup (?)
+
+; Shape of text cursor set by CSRDSP
+cursor_shape dw 0B0Dh ; Initially in overwrite mode
+
+; Colors set by SETFBC and returned by GETFBC
+foreground_color db 7
+background_color db 0
+
+; Color set by SETATR
+graph_attr db 0
+
+DSEG ends
+
 END
