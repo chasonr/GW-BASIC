@@ -24,7 +24,7 @@
 	BEEPSW=1		;for SOUND, BEEP statements
 	NMLPT=3			;number of line printers
 	CONSSW=1		;Device CONS:
-	NMCOMT=2		;number of COMmunications ports
+	NMCOMT=4		;number of COMmunications ports
 	NMPENT=1		;number of light pens
 	NMSTRT=4		;number of joysticks
 	GWCASS=0		;Cassette switch (CSAVE,CLOAD,MOTOR)
