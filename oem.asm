@@ -95,7 +95,7 @@ GWTERM endp
 ; Returns:  Z set if no key
 ;           If Z clear:
 ;               C set: 2 byte code
-;                      0xFF00+code for various special keys
+;                      0xFF00+code for CTRL-x keys
 ;                      0x8000+code for function keys and ALT-shifted letters
 ;               C clear, AL != 0xFE: normal single byte character
 ;               C clear, AL == 0xFE: two byte code in DX (DH = 0, DL = scan code)
@@ -112,18 +112,184 @@ KEYINP proc near
     ; AH = scan code; AL = ASCII character
     xor ah, ah
     int 16h
+    or ax, ax
+    jnz @F
+        ret
+    @@:
     or al, al
     jz @function
-    clc
-    ret
+        ; Regular key
+        cmp al, 0FEh
+        jne @F
+            mov dx, 00FEh
+        @@:
+        xor ah, ah
+        cmp al, 7Fh ; delete key
+        je @control
+        cmp al, 20h
+        jae @end_normal
+        @control:
+            mov ah, 0FFh ; control keys
+        @end_normal:
+        or al, al
+        clc
+        ret
 
 @function:
-    ; stub
-    mov al, '?'
+    ; Return the 0xFF00 keys
+    cmp ah, 053h ; Delete key
+    jne @F
+        mov ax, 0FF7Fh
+        or ax, ax
+        clc
+        ret
+    @@:
+    ; Search ctrl-table for the scan code
+    push cx
+    push di
+    push es
+    mov cx, cs
+    mov es, cx
+    mov cx, end_ctrl_table - ctrl_table
+    mov di, offset ctrl_table
+    mov al, ah
+    cld
+    repne scasb
+    jne @special
+    mov ax, 0FF00h + (end_ctrl_table - ctrl_table) - 1
+    sub ax, cx
+    pop es
+    pop di
+    pop cx
+    or ax, ax
+    stc
+    ret
+
+@special:
+    ; Function keys and ALT-shifted keys
+    mov al, ah
+    sub al, 10h
+    jc @other
+    cmp al, end_alt_table - alt_table
+    jbe @alt_key        ; ALT-shifted letters
+    mov al, ah
+    sub al, 3Bh
+    jc @other
+    cmp al, 10
+    jb @function_key    ; Unshifted function keys F1-F10
+    jmp @other
+
+    ; Alt-shifted keys
+@alt_key:
+    mov di, ax
+    and di, 00FFh
+    mov al, alt_table[di]
+    or al, al
+    je @other
+    jmp @8000_key
+
+    ; Function keys
+@function_key:
+    add al, 20h
+@8000_key:
+    mov ah, 80h
+    pop es
+    pop di
+    pop cx
+    or ax, ax
+    stc
+    ret
+
+    ; Anything not found above
+@other:
+    mov dl, ah
+    mov dh, 0
+    mov al, 0FEh
+    pop es
+    pop di
+    pop cx
+    or ax, ax
     clc
     ret
 
 KEYINP endp
+
+; Special keys with these scan codes shall be returned as the corresponding
+; control character, with 0xFF in AH.
+ctrl_table label byte
+    db 00h      ; ctrl-@
+    db 00h      ; ctrl-A
+    db 73h      ; ctrl-B <- Ctrl-Left
+    db 00h      ; ctrl-C
+    db 00h      ; ctrl-D
+    db 75h      ; ctrl-E <- Ctrl-End
+    db 74h      ; ctrl-F <- Ctrl-Right
+    db 00h      ; ctrl-G
+    db 00h      ; ctrl-H
+    db 00h      ; ctrl-I
+    db 00h      ; ctrl-J
+    db 47h      ; ctrl-K <- Home
+    db 00h      ; ctrl-L
+    db 4Fh      ; ctrl-M <- End
+    db 00h      ; ctrl-N
+    db 00h      ; ctrl-O
+    db 00h      ; ctrl-P
+    db 00h      ; ctrl-Q
+    db 52h      ; ctrl-R <- Insert
+    db 00h      ; ctrl-S
+    db 00h      ; ctrl-T
+    db 00h      ; ctrl-U
+    db 00h      ; ctrl-V
+    db 00h      ; ctrl-W
+    db 00h      ; ctrl-X
+    db 00h      ; ctrl-Y
+    db 76h      ; ctrl-Z <- Ctrl-Page Down
+    db 00h      ; ctrl-[
+    db 4Dh      ; ctrl-\ <- Right
+    db 4Bh      ; ctrl-] <- Left
+    db 48h      ; ctrl-^ <- Up
+    db 50h      ; ctrl-_ <- Down
+end_ctrl_table:
+
+; Special keys with alt codes 10h through the end of this table are returned
+; as 0x8000 plus the byte here
+alt_table label byte
+    db 'Q'      ; scan code 10h: Alt-Q
+    db 'W'      ; scan code 11h: Alt-W
+    db 'E'      ; scan code 12h: Alt-E
+    db 'R'      ; scan code 13h: Alt-R
+    db 'T'      ; scan code 14h: Alt-T
+    db 'Y'      ; scan code 15h: Alt-Y
+    db 'U'      ; scan code 16h: Alt-U
+    db 'I'      ; scan code 17h: Alt-I
+    db 'O'      ; scan code 18h: Alt-O
+    db 'P'      ; scan code 19h: Alt-P
+    db 00h      ; scan code 1Ah: none
+    db 00h      ; scan code 1Bh: none
+    db 00h      ; scan code 1Ch: none
+    db 00h      ; scan code 1Dh: none
+    db 'A'      ; scan code 1Eh: Alt-A
+    db 'S'      ; scan code 1Fh: Alt-S
+    db 'D'      ; scan code 10h: Alt-D
+    db 'F'      ; scan code 11h: Alt-F
+    db 'G'      ; scan code 12h: Alt-G
+    db 'H'      ; scan code 13h: Alt-H
+    db 'J'      ; scan code 14h: Alt-J
+    db 'K'      ; scan code 15h: Alt-K
+    db 'L'      ; scan code 16h: Alt-L
+    db 00h      ; scan code 17h: none
+    db 00h      ; scan code 18h: none
+    db 00h      ; scan code 19h: none
+    db 00h      ; scan code 1Ah: none
+    db 00h      ; scan code 1Bh: none
+    db 'Z'      ; scan code 1Ch: Alt-Z
+    db 'X'      ; scan code 1Dh: Alt-X
+    db 'C'      ; scan code 1Eh: Alt-C
+    db 'V'      ; scan code 1Fh: Alt-V
+    db 'B'      ; scan code 10h: Alt-B
+    db 'N'      ; scan code 11h: Alt-N
+    db 'M'      ; scan code 12h: Alt-M
+end_alt_table:
 
 ; Map key for the screen editor
 ; It is not entirely clear what this function does.
@@ -187,8 +353,79 @@ PRTMAP endp
 ; Returns:  C set if two byte character
 ;           AL = first byte; AH = second byte
 PUBLIC INKMAP ; Keyboard
-INKMAP:
-    INT 3
+INKMAP proc near
+
+    jc @two_byte
+    cmp al, 0FEh
+    je @three_byte
+
+        ; One byte character
+        or ax, ax
+        clc
+        ret
+
+    @two_byte:
+        ; Two byte character
+        ; Check for function and ALT keys
+        cmp ah, 80h
+        jne @end_80
+            ; 20h to 29h are function keys
+            cmp al, 20h
+            jb @check_alt
+            cmp al, 29h
+            ja @check_alt
+                sub ax, 8020h - 3Bh
+                stc
+                ret
+            @check_alt:
+                ; Scan alt_table
+                push cx
+                push di
+                push es
+                mov cx, cs
+                mov es, cx
+                mov cx, end_alt_table - alt_table
+                mov di, offset alt_table
+                cld
+                repne scasb
+                jne @ret_80
+                    ; Found in table
+                    mov ax, 10h + end_alt_table - alt_table - 1
+                    sub ax, cx
+                @ret_80:
+                pop es
+                pop di
+                pop cx
+                stc
+                ret
+        @end_80:
+        ; Check for character in ctrl_table
+        cmp ah, 0FFh
+        jne @end2
+        cmp al, end_ctrl_table - ctrl_table
+        jae @end2
+            push bx
+            mov bl, al
+            xor bh, bh
+            mov bl, ctrl_table[bx]
+            or bl, bl
+            je @end2a
+                mov ax, bx
+            @end2a:
+            pop bx
+        @end2:
+        or ax, ax
+        stc
+        ret
+
+    @three_byte:
+        ; Three byte character
+        mov ax, dx
+        or ax, ax
+        stc
+        ret
+
+INKMAP endp
 
 ; Map key for input via INPUT statement
 ; On entry: C set and AL and DX set as from KEYINP
@@ -196,16 +433,24 @@ INKMAP:
 ;          C set if two byte sequence in AX
 ;          else C clear and one byte in AL
 PUBLIC INFMAP ; Keyboard
-INFMAP:
-    INT 3
+INFMAP proc near
+
+    ; Stub
+    ret
+
+INFMAP endp
 
 ; "Map super shift key to letter in AL and count"
 ; On entry: AL = "super shift key"?
 ; Returns:  AL = letter?
 ;           CH = count
 PUBLIC MAPSUP ; Keyboard
-MAPSUP:
-    INT 3
+MAPSUP proc near
+
+    ; Stub
+    ret
+
+MAPSUP endp
 
 ;-----------------------------------------------------------------------------
 ; Text mode screen support
@@ -329,12 +574,66 @@ SCRINP endp
 
 ; Scroll window beginning at column AH, row AL,
 ; extending through CH columns and CL rows,
-; to column BH, row AL
+; to column BH, row BL
 ; Rows and columns begin at 1
 ; Returns: None
 PUBLIC SCROLL
-SCROLL:
-    INT 3
+SCROLL proc near
+
+    push ax
+    push bx
+    push cx
+    push dx
+
+    ; Make all coordinates 0-based
+    dec ah
+    dec al
+    dec bh
+    dec bl
+
+    ; Scroll vertically
+    ; AH <- left; BH <- max(AH, BH)
+    cmp ah, bh
+    jb @F
+        xchg ah, bh
+    @@:
+    ; BH <- right
+    add bh, ch
+    dec bh
+    ; DH <- BIOS function
+    mov dh, 06h ; scroll up
+    mov dl, al
+    sub dl, bl
+    jnc @F
+        mov dh, 07h ; scroll down
+        neg dl
+        xchg al, bl
+    @@:
+    ; BL = top
+    ; AL <- bottom
+    add al, cl
+    dec al
+
+    ; Have: AH = left; BL = top; BH = right; AL = bottom; DL = distance; DH = function
+    ; Want: CL = left; CH = top; DL = right, DH = bottom; AL = distance; AH = function
+    mov ch, bl  ; CH <- top
+    mov cl, ah  ; CL <- left
+    mov ah, dh  ; AH <- function
+    mov dh, al  ; DH <- bottom
+    mov al, dl  ; AL <- distance
+    mov dl, bh  ; DL <- right
+    mov bh, 07h ; attribute
+    int 10h
+
+    ; TODO: scroll horizontally
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+SCROLL endp
 
 ; Clear the screen or the text window
 ; On entry: If the CLS statement has a parameter, C is set and the parameter
@@ -632,11 +931,18 @@ FKYFMT endp
 PUBLIC FKYADV
 FKYADV proc near
 
-    ; Stub: just clear Z
-    push bx
-    mov bl, 1
-    or bl, bl
-    pop bx
+    ; TODO: handle 40 column display
+    push ax
+    jnz @keys_off
+        mov max_line, 23
+        mov ax, 1
+        jmp @end
+    @keys_off:
+        mov max_line, 24
+        mov ax, 0
+    @end:
+    or ax, ax
+    pop ax
     ret
 
 FKYADV endp
@@ -1090,6 +1396,9 @@ background_color db 0
 
 ; Color set by SETATR
 graph_attr db 0
+
+; Maximum line for SCROLL
+max_line db 0
 
 DSEG ends
 
