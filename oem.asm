@@ -1,8 +1,17 @@
 CSEG	segment public 'CODESG' 
 	assume  cs:CSEG, ds:DSEG
 
+include OEM.H
+
+.radix 10
+
 extrn SCNSWI:near
 extrn GRPINI:near
+extrn SCNCLR:near
+
+; For COMx port comnfiguration
+COM_rx_size = 256 ; Default size of receive buffer
+COM_tx_size = 128 ; Size of transmit buffer
 
 ;-----------------------------------------------------------------------------
 ; Initialization and termination
@@ -26,7 +35,8 @@ GWINI:
     mov  al,80
     mov  cl,25
     call SCNSWI
-
+    mov al, 0
+    call CLRSCN
     call GRPINI
 
     pop cx
@@ -45,7 +55,7 @@ GETHED:
     mov bx, offset oem_header   ; Address of the header string
     ret
 
-oem_header db "Open source version copyright 2025 Ray Chason.", 0Dh, 0Ah, 0
+oem_header db "GW-BASIC for FreeDOS, copyright 2025 Ray Chason.", 0Dh, 0Ah, 0
 
 ; Copy code segment to new location
 ; On entry: DS = ES = SS = NEWDS, the new data segment
@@ -96,16 +106,31 @@ EDTMAP:
 ; Map key for echo to the screen
 ; On entry: AL = key
 ; Returns:  Z to ignore the character
-;           AH = 0xFF and C set if editor function
+;           AH = 0xFF and C set if control character
+;                Responses to control characters are defined in FUNTAB
+;                in SCNDRV.ASM
 ;           AH = 0x80 and C set if function key or ALT-shifted key
 ;           AH = 0x00 and C clear otherwise
 PUBLIC PRTMAP
-PRTMAP:
+PRTMAP proc near
+
     ; TODO: This is a bare minimum function
-    mov ah, 0
+    cmp al, 20h
+    jb @control
+    cmp al, 7Fh
+    je @control
+    mov ah, 0   ; treat as printable
     or al, al
     clc
     ret
+
+@control:
+    mov ah, 0FFh
+    or ah, ah
+    stc
+    ret
+
+PRTMAP endp
 
 ; Map key for input via INKEY$
 ; On entry: C set and AL and DX set as from KEYINP
@@ -144,12 +169,88 @@ MAPSUP:
 ; Returns C clear for success
 ; No caller checks the C flag
 PUBLIC SCROUT
-SCROUT:
-    ; TODO: set the cursor position, page and attribute
-    mov al, 09h
+SCROUT proc near
+
+    ; TODO: set the page and attribute
+if 0
+    push ax
+    push bx
+    push cx
+    push dx
+    call convert_cursor
+    call set_cursor
+    mov ah, 09h
     mov bx, 0007h
+    mov cx, 1
     int 10h
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    clc
     ret
+else
+    ; An alternate implementation, writing directly to the frame buffer
+    push ax
+    push di
+    push es
+
+    call xy_to_address
+    jc @F
+        mov ah, 07h ; attribute
+        mov es:[di], ax
+    @@:
+
+    pop es
+    pop di
+    pop ax
+    ret
+endif
+
+SCROUT endp
+
+; Convert 1-based (column, row) to text frame buffer address
+; On entry: DX = 1-based (column, row)
+; Returns:  C set if out of bounds
+;           else ES:DI = frame buffer address of character cell
+if 1
+xy_to_address proc near
+
+    ; TODO: allow sizes other than 80x25
+    ; TODO: address the monochrome frame buffer
+    ; TODO: include the page in the address
+    push dx
+    dec dh          ; 1-based to 0-based
+    dec dl
+    cmp dh, 80      ; check bounds
+    jae @bounds
+    cmp dl, 25
+    jae @bounds
+
+    push ax
+    mov al, dl      ; AL <- row
+    mov dl, dh      ; DL <- column
+    xor dh, dh      ; zero extend column
+    mov di, dx      ; DI <- column (MUL clobbers DX)
+    xor ah, ah      ; zero extend row
+    mov dx, 80      ; AX <- row * 80
+    mul dx
+    add di, ax      ; DI <- row*80 + column
+    shl di, 1       ; Two bytes per character
+    mov ax, 0B800h  ; Segment for color modes
+    mov es, ax
+    pop ax
+    pop dx
+    clc
+    ret
+
+@bounds:
+    pop dx
+    stc
+    ret
+
+xy_to_address endp
+endif
 
 ; Read a character from the screen
 ; On entry:
@@ -179,16 +280,65 @@ SCROLL:
 ; Returns:  C clear if screen cleared
 ;           SCNCLR and GRPINI called
 PUBLIC CLRSCN
-CLRSCN:
-    INT 3
+CLRSCN proc near
+
+    cmp al, 0
+    stc
+    jne CLRSCN_end
+
+        push ax
+        push bx
+        push cx
+        push dx
+
+        ; TODO: Only 80x25 text supported
+        mov ax, 0600h
+        mov bh, 07h
+        xor cx, cx
+        mov dx, (25-1)*256 + (80-1)
+        int 10h
+
+        call SCNCLR
+
+        pop dx
+        pop cx
+        pop bx
+        pop ax
+        clc
+
+    CLRSCN_end:
+    ret
+
+CLRSCN endp
 
 ; Clear to end of line
 ; On entry: DH = requested column (1 = left)
 ;           DL = requested row (1 = top)
 ; Returns: None.
 PUBLIC CLREOL
-CLREOL:
-    INT 3
+CLREOL proc near
+
+    push ax
+    push bx
+    push cx
+    push dx
+
+    call convert_cursor
+    call set_cursor
+
+    mov cx, 80
+    sub cl, dl
+    mov ax, 0920h
+    mov bx, 0007h
+    int 10h
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+CLREOL endp
 
 ; Sets the cursor visibility and size according to the parameters to the
 ; LOCATE statement.
@@ -212,29 +362,31 @@ CSRATR:
 ;                It is uncertain that DX is set
 ; Returns: none
 PUBLIC CSRDSP
-CSRDSP:
+CSRDSP proc near
+
     push ax
     push bx
     push cx
+    push dx
 
     ; TODO: For now, assume 16 line character
     cmp al, 0
     jne @F
         mov cx, 1F1Fh ; start line 31, end line 31
-        jmp set_cursor
+        jmp @set_cursor
     @@:
     cmp al, 1
     jne @F
         mov cx, 000Dh ; start line 0, end line 13
-        jmp set_cursor
+        jmp @set_cursor
     @@:
     cmp al, 2
     jne @F
         mov cx, 0B0Dh ; start line 11, end line 13
-        jmp set_cursor
+        jmp @set_cursor
     @@:
         mov cx, cursor_shape
-    set_cursor:
+    @set_cursor:
     mov cursor_shape, cx
 
     ; According to the Ralf Brown Interrupt List, some BIOSes lock up if
@@ -246,11 +398,46 @@ CSRDSP:
     mov ah, 01h
     int 10h
 
+    ; Set the cursor position
+    call convert_cursor
+    call set_cursor
+
+    pop dx
     pop cx
     pop bx
     pop ax
     ret
 
+CSRDSP endp
+
+; Convert 1-based (column, row) to 0-based (row, column)
+convert_cursor proc near private
+
+    xchg dl, dh
+    dec dl
+    dec dh
+    ret
+
+convert_cursor endp
+
+; Set the cursor to 0-based (row, column)
+set_cursor proc near private
+
+    cmp dh, 25
+    jae @F
+    cmp dl, 80
+    jae @F
+        push ax
+        push bx
+        mov bh, 0
+        mov ah, 02h
+        int 10h
+        pop bx
+        pop ax
+    @@:
+    ret
+
+set_cursor endp
 
 ; Print the screen
 ; On entry: none
@@ -362,7 +549,8 @@ SETFBC:
 ;          byte 1: number of keys to display
 ;          byte 2: number of first function key
 PUBLIC FKYFMT
-FKYFMT:
+FKYFMT proc near
+
     ; Stub: fixed format for 80 column display
     mov bx, offset fkey_format
     mov byte ptr 0[bx], 6
@@ -370,19 +558,25 @@ FKYFMT:
     mov byte ptr 2[bx], 1
     ret
 
+FKYFMT endp
+
 ; Unclear what this does. It seems to depend on Z set or clear and have
 ; to do with display of function keys.
 ; It sets internal variables giving the first key displayed and the number
 ; of lines not displaying function keys. Z is set if function keys are
 ; not displayed.
+; Returns:  Z clear if function keys are to be displayed
 PUBLIC FKYADV
-FKYADV:
+FKYADV proc near
+
     ; Stub: just clear Z
-    push ax
-    mov ax, 1
-    or ax, ax
-    pop ax
+    push bx
+    mov bl, 1
+    or bl, bl
+    pop bx
     ret
+
+FKYADV endp
 
 ;-----------------------------------------------------------------------------
 ; Graphics mode screen support
@@ -603,11 +797,70 @@ DONOTE:
 ;           Z set if /C: option was not specified on the command line
 ;           If Z not set: DX = receive buffer size
 ; Returns:  C set if error
+;           If C clear: DX = configured receive buffer size
 PUBLIC SETCBF
-SETCBF:
-    ; TODO COMx ports not yet supported
+SETCBF proc near
+
+if NMCOMT eq 0
+    ; No COMx ports configured
+    mov dx, 0
     clc
     ret
+else
+    ; TODO COMx ports not yet supported
+    push ax
+    push bx
+    push cx
+    push si
+    push di
+
+    mov si, cx ; Segment in SI
+
+    ; Set default receive buffer size
+    jnz @F
+        mov dx, COM_rx_size
+    @@:
+
+    ; Align to multiple of 16 bytes
+    add dx, 15
+    jc SETCBF_error
+    mov cl, 4
+    shr dx, cl
+
+    ; Allocate this much per COMx device
+    mov cx, NMCOMT ; How many ports
+    xor si, si     ; Offset to next receive or transmit buffer
+    xor bx, bx     ; Offset to next control structure
+    SETCBF_allocate:
+        ; TODO: place the receive buffer segment
+        add si, dx
+        jc SETCBF_error
+        ; TODO: place the transmit buffer segment
+        add si, (COM_tx_size+15)/16
+        jc SETCBF_error
+    loop SETCBF_allocate
+    ; Check total allocation for overflow
+    ; Set C if *more* than 64K allocated
+    cmp si, 65536/16
+    cmc
+    jc SETCBF_error
+
+    ; Return size in DX
+    mov dx, si
+    mov cl, 4
+    shl dx, cl
+
+    clc
+SETCBF_error:
+    pop di
+    pop si
+    pop cx
+    pop bx
+    pop ax
+    ret
+endif
+
+SETCBF endp
 
 ; Set up COMx port
 ; On entry: AH = unit number; 0 for COM1, 1 for COM2
