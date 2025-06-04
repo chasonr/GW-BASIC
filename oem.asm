@@ -59,13 +59,20 @@ oem_header db "GW-BASIC for FreeDOS, copyright 2025 Ray Chason.", 0Dh, 0Ah, 0
 
 ; Copy code segment to new location
 ; On entry: DS = ES = SS = NEWDS, the new data segment
-; Data segment already copied up to TSTACK; that is, the portion declared
-; in GWDATA.ASM, but not the OEM portion, nor the part in GWRAM.ASM.
+; Data segment already copied to its new location.
 ; If any interrupt handlers have been installed, the vectors need to be
 ; updated with the new code segment.
 PUBLIC SEGINI
-SEGINI:
-    INT 3
+SEGINI proc near
+
+    ; Keep It Simple, um, Sancho
+    mov BASIC_DS, ds
+    ret
+
+SEGINI endp
+
+; Data segment for interrupt handlers
+BASIC_DS dw ?
 
 ; Shut down before exit
 ; On entry: None
@@ -73,8 +80,12 @@ SEGINI:
 ; This is the place to remove interrupt handlers and reset the video hardware
 ; and any other hardware.
 PUBLIC GWTERM
-GWTERM:
-    INT 3
+GWTERM proc near
+
+    ; Nothing to shut down yet
+    ret
+
+GWTERM endp
 
 ;-----------------------------------------------------------------------------
 ; Keyboard support
@@ -88,9 +99,31 @@ GWTERM:
 ;                      0x8000+code for function keys and ALT-shifted letters
 ;               C clear, AL != 0xFE: normal single byte character
 ;               C clear, AL == 0xFE: two byte code in DX (DH = 0, DL = scan code)
-PUBLIC KEYINP ; Keyboard
-KEYINP:
-    INT 3
+PUBLIC KEYINP
+KEYINP proc near
+
+    ; Check for an available key
+    mov ah, 01h
+    int 16h
+    jnz @have_key
+    ret
+
+@have_key:
+    ; AH = scan code; AL = ASCII character
+    xor ah, ah
+    int 16h
+    or al, al
+    jz @function
+    clc
+    ret
+
+@function:
+    ; stub
+    mov al, '?'
+    clc
+    ret
+
+KEYINP endp
 
 ; Map key for the screen editor
 ; It is not entirely clear what this function does.
@@ -100,8 +133,25 @@ KEYINP:
 ;           Z clear and C clear if printable character
 ;           AH = 0 if two byte character, else 0xFF
 PUBLIC EDTMAP
-EDTMAP:
-    INT 3
+EDTMAP proc near
+
+    ; TODO: This is a bare minimum function
+    cmp al, 20h
+    jb @control
+    cmp al, 7Fh
+    je @control
+    mov ah, 0   ; treat as printable
+    or al, al
+    clc
+    ret
+
+@control:
+    mov ah, 0FFh
+    or ah, ah
+    stc
+    ret
+
+EDTMAP endp
 
 ; Map key for echo to the screen
 ; On entry: AL = key
@@ -214,7 +264,7 @@ SCROUT endp
 ; Returns:  C set if out of bounds
 ;           else ES:DI = frame buffer address of character cell
 if 1
-xy_to_address proc near
+xy_to_address proc near private
 
     ; TODO: allow sizes other than 80x25
     ; TODO: address the monochrome frame buffer
@@ -261,8 +311,21 @@ endif
 ;     AL = character; AH = 0
 ; Only the screen editor checks the C flag
 PUBLIC SCRINP
-SCRINP:
-    INT 3
+SCRINP proc near
+
+    ; TODO: support graphics modes
+    push di
+    push es
+    call xy_to_address
+    mov ax, 0
+    jc @end
+        mov al, es:[di]
+    @end:
+    pop es
+    pop di
+    ret
+
+SCRINP endp
 
 ; Scroll window beginning at column AH, row AL,
 ; extending through CH columns and CL rows,
@@ -1001,8 +1064,15 @@ RDSTIK:
 ; Test for trappable events
 ; Return: Z clear if any event occurred
 PUBLIC POLLEV
-POLLEV:
-    INT 3
+POLLEV proc near
+
+    ; TODO: stub; no events currently supported
+    push ax
+    xor ax, ax
+    pop ax
+    ret
+
+POLLEV endp
 
 CSEG ENDS
 
