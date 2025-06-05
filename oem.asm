@@ -47,8 +47,12 @@ GWINI proc near
     mov ax, 1003h
     int 10h
 
-    ; Assume we're in text mode at 80 x 25
-    mov  al,80
+    ; Set up screen mode 0
+    mov bx, offset screen_mode_0
+    mov mode_ptr, bx
+    call mode_0_SCRSTT_init
+
+    mov  al,text_width
     mov  cl,25
     call SCNSWI
     mov al, 0
@@ -516,613 +520,8 @@ MAPSUP proc near
 MAPSUP endp
 
 ;-----------------------------------------------------------------------------
-; Text mode screen support
+; PEEK and POKE filters
 ;-----------------------------------------------------------------------------
-
-; Print a character to the screen
-; On entry:
-;     AL = character
-;     DH = column (1 left)
-;     DL = row (1 top)
-; Returns C clear for success
-; No caller checks the C flag
-PUBLIC SCROUT
-SCROUT proc near
-
-    ; TODO: set the page and attribute
-if 0
-    push ax
-    push bx
-    push cx
-    push dx
-    call convert_cursor
-    call set_cursor
-    mov ah, 09h
-    mov bh, 0
-    mov bl, 07h
-    mov cx, 1
-    int 10h
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    clc
-    ret
-else
-    ; An alternate implementation, writing directly to the frame buffer
-    push ax
-    push di
-    push es
-
-    call xy_to_address
-    jc @F
-        mov ah, text_attr
-        mov es:[di], ax
-    @@:
-
-    pop es
-    pop di
-    pop ax
-    ret
-endif
-
-SCROUT endp
-
-; Convert 1-based (column, row) to text frame buffer address
-; On entry: DX = 1-based (column, row)
-; Returns:  C set if out of bounds
-;           else ES:DI = frame buffer address of character cell
-if 1
-xy_to_address proc near private
-
-    ; TODO: allow sizes other than 80x25
-    ; TODO: address the monochrome frame buffer
-    ; TODO: include the page in the address
-    push dx
-    dec dh          ; 1-based to 0-based
-    dec dl
-    cmp dh, 80      ; check bounds
-    jae @bounds
-    cmp dl, 25
-    jae @bounds
-
-    push ax
-    mov al, dl      ; AL <- row
-    mov dl, dh      ; DL <- column
-    xor dh, dh      ; zero extend column
-    mov di, dx      ; DI <- column (MUL clobbers DX)
-    xor ah, ah      ; zero extend row
-    mov dx, 80      ; AX <- row * 80
-    mul dx
-    add di, ax      ; DI <- row*80 + column
-    shl di, 1       ; Two bytes per character
-    mov ah, active_page ; Page on which we draw
-    mov al, 0       ; Load into high byte
-    repeat 4
-        shl ah, 1   ; shift left four, for page * 4096
-    endm
-    add di, ax
-    mov ax, 0B800h  ; Segment for color modes
-    mov es, ax
-    pop ax
-    pop dx
-    clc
-    ret
-
-@bounds:
-    pop dx
-    stc
-    ret
-
-xy_to_address endp
-endif
-
-; Read a character from the screen
-; On entry:
-;     C set if screen editor is calling
-;     DH = column (1 left)
-;     DL = row (1 top)
-; Returns C clear for success
-;     AL = character; AH = 0
-; Only the screen editor checks the C flag
-PUBLIC SCRINP
-SCRINP proc near
-
-    ; TODO: support graphics modes
-    push di
-    push es
-    call xy_to_address
-    mov ax, 0
-    jc @end
-        mov al, es:[di]
-    @end:
-    pop es
-    pop di
-    ret
-
-SCRINP endp
-
-; Scroll window beginning at column AH, row AL,
-; extending through CH columns and CL rows,
-; to column BH, row BL
-; Rows and columns begin at 1
-; Returns: None
-PUBLIC SCROLL
-SCROLL proc near
-
-    push ax
-    push bx
-    push cx
-    push dx
-
-    ; Make all coordinates 0-based
-    dec ah
-    dec al
-    dec bh
-    dec bl
-
-    ; Scroll vertically
-    ; AH <- left; BH <- max(AH, BH)
-    cmp ah, bh
-    jb @F
-        xchg ah, bh
-    @@:
-    ; BH <- right
-    add bh, ch
-    dec bh
-    ; DH <- BIOS function
-    mov dh, 06h ; scroll up
-    mov dl, al
-    sub dl, bl
-    jnc @F
-        mov dh, 07h ; scroll down
-        neg dl
-        xchg al, bl
-    @@:
-    ; BL = top
-    ; AL <- bottom
-    add al, cl
-    dec al
-
-    ; Have: AH = left; BL = top; BH = right; AL = bottom; DL = distance; DH = function
-    ; Want: CL = left; CH = top; DL = right, DH = bottom; AL = distance; AH = function
-    mov ch, bl  ; CH <- top
-    mov cl, ah  ; CL <- left
-    mov ah, dh  ; AH <- function
-    mov dh, al  ; DH <- bottom
-    mov al, dl  ; AL <- distance
-    mov dl, bh  ; DL <- right
-    mov bh, 07h ; attribute
-    int 10h
-
-    ; TODO: scroll horizontally
-
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-SCROLL endp
-
-; Clear the screen or the text window
-; On entry: If the CLS statement has a parameter, C is set and the parameter
-;           is in AL.
-;           Otherwise, C is clear and AL is 0.
-; Returns:  C clear if screen cleared
-;           SCNCLR and GRPINI called
-PUBLIC CLRSCN
-CLRSCN proc near
-
-    cmp al, 0
-    stc
-    jne CLRSCN_end
-
-        push ax
-        push bx
-        push cx
-        push dx
-
-        ; TODO: Only 80x25 text supported
-        mov ax, 0600h
-        mov bh, 07h
-        xor cx, cx
-        mov dx, (25-1)*256 + (80-1)
-        int 10h
-
-        call SCNCLR
-
-        pop dx
-        pop cx
-        pop bx
-        pop ax
-        clc
-
-    CLRSCN_end:
-    ret
-
-CLRSCN endp
-
-; Clear to end of line
-; On entry: DH = requested column (1 = left)
-;           DL = requested row (1 = top)
-; Returns: None.
-PUBLIC CLREOL
-CLREOL proc near
-
-    push ax
-    push bx
-    push cx
-    push dx
-
-    call convert_cursor
-    call set_cursor
-
-    mov cx, 80
-    sub cl, dl
-    mov ax, 0920h
-    mov bx, 0007h
-    int 10h
-
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-CLREOL endp
-
-; Sets the cursor visibility and size according to the parameters to the
-; LOCATE statement.
-; On entry: AH = LOCATE parameter 3 present if nonzero
-;           AL = LOCATE parameter 3: cursor is visible if nonzero
-;           BH = LOCATE parameter 4 present
-;           BL = LOCATE parameter 4: start line of cursor
-;           CH = LOCATE parameter 5 present
-;           CL = LOCATE parameter 5: end line of cursor
-; Returns:  C set if a parameter was out of the valid range
-PUBLIC CSRATR
-CSRATR proc near
-
-    ; TODO: implement the cursor visible flag
-    test bh, bh
-    je @F
-        cmp bl, 31
-        ja @error
-        mov byte ptr cursor_shape+1, bl
-    @@:
-    test ch, ch
-    je @F
-        cmp cl, 31
-        ja @error
-        mov byte ptr cursor_shape+0, cl
-    @@:
-
-    clc
-    ret
-
-@error:
-    stc
-    ret
-
-CSRATR endp
-
-; On entry: AL = cursor type
-;                0 = off
-;                1 = insert mode (larger)
-;                2 = overwrite mode (smaller)
-;                3 = user mode
-;           DX = cursor position: 1-based (column, row)
-;                It is uncertain that DX is set
-; Returns: none
-PUBLIC CSRDSP
-CSRDSP proc near
-
-    push ax
-    push bx
-    push cx
-    push dx
-
-    ; TODO: For now, assume 16 line character
-    cmp al, 0
-    jne @F
-        mov cx, 1F1Fh ; start line 31, end line 31
-        jmp @set_cursor
-    @@:
-    cmp al, 1
-    jne @F
-        mov cx, 000Dh ; start line 0, end line 13
-        jmp @set_cursor
-    @@:
-    cmp al, 2
-    jne @F
-        mov cx, 0B0Dh ; start line 11, end line 13
-        jmp @set_cursor
-    @@:
-        mov cx, cursor_shape
-    @set_cursor:
-
-    ; According to the Ralf Brown Interrupt List, some BIOSes lock up if
-    ; AL is not equal to the video mode
-    mov ah, 0Fh
-    int 10h     ; AL <- video mode
-
-    ; Set the cursor shape
-    mov ah, 01h
-    int 10h
-
-    ; Set the cursor position
-    call convert_cursor
-    call set_cursor
-
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-CSRDSP endp
-
-; Convert 1-based (column, row) to 0-based (row, column)
-convert_cursor proc near private
-
-    xchg dl, dh
-    dec dl
-    dec dh
-    ret
-
-convert_cursor endp
-
-; Set the cursor to 0-based (row, column)
-set_cursor proc near private
-
-    cmp dh, 25
-    jae @F
-    cmp dl, 80
-    jae @F
-        push ax
-        push bx
-        mov bh, 0
-        mov ah, 02h
-        int 10h
-        pop bx
-        pop ax
-    @@:
-    ret
-
-set_cursor endp
-
-; Print the screen
-; On entry: none
-; Returns:  none
-PUBLIC LCPY
-LCPY proc near
-
-    int 05h ; Print-screen BIOS call
-    ret
-
-LCPY endp
-
-; Read attribute at requested position
-; On entry: AL = column (1 = left)
-;           BL = row (1 = top)
-; Returns:  BL = attribute; BH = 0
-PUBLIC SCRATR
-SCRATR proc near
-
-    ; TODO: support graphics modes
-    push di
-    push es
-    push dx
-    mov dx, bx
-    call xy_to_address
-    mov bx, 0
-    jc @end
-        mov bl, es:[di+1]
-    @end:
-    pop dx
-    pop es
-    pop di
-    ret
-
-SCRATR endp
-
-; Process parameters to the SCREEN statement
-; On entry: BX = list of parameters:
-;                BX[0] = 1 byte: number of parameters specified
-;                followed by two bytes for each parameter:
-;                     A nonzero byte if the parameter was specified
-;                     A byte for the value of the parameter (ignored if the
-;                         first parameter is zero)
-; Call SCNSWI if BIOS mode changed
-; Returns: C set if error
-PUBLIC SCRSTT
-SCRSTT proc near
-
-    push ax
-    push bx
-    push cx
-
-    ; Get number of parameters
-    mov cl, [bx]
-    inc bx
-
-    ; Parameter 1: screen mode
-    ; At present, only 80x25 text mode is supported
-    dec cl
-    js @error   ; error if no parameters
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_1
-        cmp ah, 0
-        jne @error
-    @end_1:
-
-    ; Parameter 2: color flag
-    dec cl
-    js @exit
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_2
-        ; Get BIOS video mode
-        mov ch, ah
-        mov ah, 0Fh
-        int 10h
-        ; Affects modes 0-5 only; ignored for other modes
-        cmp al, 5
-        ja @end_2
-            shr al, 1
-            cmp ch, 1 ; set C if CH == 0
-            cmc       ; set C if CH != 0
-            rcl al, 1 ; rotate C into bit 1 of mode
-            ; Meaning of bit 1 is reversed for modes 4-5
-            cmp al, 4
-            jb @F
-                xor al, 1
-            @@:
-            mov ah, 00h
-            int 10h
-    @end_2:
-
-    ; Parameter 3: active page
-    dec cl
-    js @exit
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_3
-        cmp ah, 7
-        ja @error
-        mov active_page, ah
-    @end_3:
-
-    ; Parameter 4: visible page
-    dec cl
-    js @exit
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_4
-        cmp ah, 7
-        ja @error
-        mov visible_page, ah
-        mov al, ah
-        mov ah, 05h
-        int 10h
-    @end_4:
-
-@exit:
-    pop cx
-    pop bx
-    pop ax
-    clc
-    ret
-
-@error:
-    pop cx
-    pop bx
-    pop ax
-    stc
-    ret
-
-SCRSTT endp
-
-; Process parameters to the COLOR statement
-; On entry: BX = list of parameters:
-;                BX[0] = 1 byte: number of parameters specified
-;                followed by two bytes for each parameter:
-;                     A nonzero byte if the parameter was specified
-;                     A byte for the value of the parameter (ignored if the
-;                         first parameter is zero)
-; Call SCNSWI if BIOS mode changed
-; Returns: C set if error
-PUBLIC SETCLR
-SETCLR proc near
-
-    push ax
-    push bx
-    push cx
-
-    ; Get number of parameters
-    mov cl, [bx]
-    inc bx
-
-    ; Parameter 1: foreground color
-    dec cl
-    js @error   ; error if no parameters
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_1
-        cmp ah, 31
-        ja @error
-        mov foreground_color, ah
-    @end_1:
-
-    ; Parameter 2: background color
-    dec cl
-    js @exit
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_2
-        cmp ah, 7
-        ja @error
-        mov background_color, ah
-    @end_2:
-
-    ; Parameter 3: border color
-    dec cl
-    js @exit
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_3
-        cmp ah, 15
-        ja @error
-        mov border_color, ah
-    @end_3:
-
-@exit:
-    call set_text_attr
-    mov bl, border_color
-    mov bh, 0
-    mov ah, 0Bh
-    int 10h
-
-    pop cx
-    pop bx
-    pop ax
-    clc
-    ret
-
-@error:
-    pop cx
-    pop bx
-    pop ax
-    stc
-    ret
-
-SETCLR endp
-
-; Set screen width in columns
-; On entry: AL = number of requested columns
-; Returns C set if error
-PUBLIC SWIDTH
-SWIDTH proc near
-
-    cmp al, 80
-    jne @error
-    clc
-    ret
-
-@error:
-    stc
-    ret
-
-SWIDTH endp
 
 ; On entry: ES:DX = address to be checked
 ;           AL = byte to be POKEd
@@ -1308,12 +707,1088 @@ basvar_table_size = $ - basvar_table
 
 basvar_index endp
 
+;-----------------------------------------------------------------------------
+; Dispatchers for the various screen modes
+;-----------------------------------------------------------------------------
+
+; Structure describing support for a screen mode
+Screen_Mode struc
+    ; Handlers for various functions
+    SCRSTT_init    dw ?
+    SCRSTT_color   dw ?
+    SCRSTT_actpage dw ?
+    SCRSTT_vispage dw ?
+    SCROUT_handler dw ?
+    SCRINP_handler dw ?
+    SCROLL_handler dw ?
+    CLRSCN_handler dw ?
+    CLREOL_handler dw ?
+    CSRATR_handler dw ?
+    CSRDSP_handler dw ?
+    LCPY_handler   dw ?
+    SCRATR_handler dw ?
+    SETCLR_handler dw ?
+    SWIDTH_handler dw ?
+    GETFBC_handler dw ?
+    SETFBC_handler dw ?
+    FKYFMT_handler dw ?
+    FKYADV_handler dw ?
+    GRPSIZ_handler dw ?
+    STOREC_handler dw ?
+    FETCHC_handler dw ?
+    UPC_handler    dw ?
+    DOWNC_handler  dw ?
+    LEFTC_handler  dw ?
+    RIGHTC_handler dw ?
+    SCALXY_handler dw ?
+    MAPXYC_handler dw ?
+    SETATR_handler dw ?
+    READC_handler  dw ?
+    SETC_handler   dw ?
+    NSETCX_handler dw ?
+    GTASPC_handler dw ?
+    PIXSIZ_handler dw ?
+    PGINIT_handler dw ?
+    NREAD_handler  dw ?
+    NWRITE_handler dw ?
+    PNTINI_handler dw ?
+    TDOWNC_handler dw ?
+    TUPC_handler   dw ?
+    SCANR_handler  dw ?
+    SCANL_handler  dw ?
+
+    ; Constants for each mode
+    text_columns   db ? ; Text columns
+    text_rows      db ? ; Text rows
+    x_res          dw ? ; X pixel resolution
+    y_res          dw ? ; Y pixel resolution
+    num_pages      db ? ; Number of supported pages
+Screen_Mode ends
+
+; Table of supported screen modes
+mode_table label word
+    dw offset screen_mode_0
+mode_table_size = ($ - mode_table)/2
+
+; JWASM complains that the literal is too long if I try to use a structure.
+; Declare the fields individually.
+screen_mode_0 label word
+    dw mode_0_SCRSTT_init     ; SCRSTT_init
+    dw mode_0_SCRSTT_color    ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw mode_0_SCROUT          ; SCROUT_handler
+    dw mode_0_SCRINP          ; SCRINP_handler
+    dw generic_SCROLL         ; SCROLL_handler
+    dw generic_CLRSCN         ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw generic_CSRDSP         ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw mode_0_SCRATR          ; SCRATR_handler
+    dw mode_0_SETCLR          ; SETCLR_handler
+    dw mode_0_SWIDTH          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw mode_0_SETFBC          ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw graphics_stub          ; GRPSIZ_handler
+    dw graphics_stub          ; STOREC_handler
+    dw graphics_stub          ; FETCHC_handler
+    dw graphics_stub          ; UPC_handler
+    dw graphics_stub          ; DOWNC_handler
+    dw graphics_stub          ; LEFTC_handler
+    dw graphics_stub          ; RIGHTC_handler
+    dw graphics_stub          ; SCALXY_handler
+    dw graphics_stub          ; MAPXYC_handler
+    dw graphics_stub          ; SETATR_handler
+    dw graphics_stub          ; READC_handler
+    dw graphics_stub          ; SETC_handler
+    dw graphics_stub          ; NSETCX_handler
+    dw graphics_stub          ; GTASPC_handler
+    dw graphics_stub          ; PIXSIZ_handler
+    dw graphics_stub          ; PGINIT_handler
+    dw graphics_stub          ; NREAD_handler
+    dw graphics_stub          ; NWRITE_handler
+    dw graphics_stub          ; PNTINI_handler
+    dw graphics_stub          ; TDOWNC_handler
+    dw graphics_stub          ; TUPC_handler
+    dw graphics_stub          ; SCANR_handler
+    dw graphics_stub          ; SCANL_handler
+    db 80                     ; text_columns
+    db 25                     ; text_rows
+    dw 640                    ; x_res
+    dw 400                    ; y_res
+    db 8                      ; num_pages
+
+; Most functions will use this macro to select the correct handler
+dispatch macro handler
+
+    push di
+    mov di, mode_ptr
+    call cs:Screen_Mode.handler[di]
+    pop di
+    ret
+
+endm
+
+; Process parameters to the SCREEN statement
+; On entry: BX = list of parameters:
+;                BX[0] = 1 byte: number of parameters specified
+;                followed by two bytes for each parameter:
+;                     A nonzero byte if the parameter was specified
+;                     A byte for the value of the parameter (ignored if the
+;                         first parameter is zero)
+; Call SCNSWI if BIOS mode changed
+; Returns: C set if error
+public SCRSTT
+SCRSTT proc near
+
+    push ax
+    push bx
+    push cx
+    push di
+
+    mov di, mode_ptr
+
+    ; Get number of parameters
+    mov cl, [bx]
+    inc bx
+
+    ; Parameter 1: screen mode
+    dec cl
+    js @error   ; error if no parameters
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_1
+        ; Determine if the mode is valid
+        cmp ah, mode_table_size
+        jae @error              ; invalid if outside of mode_table
+        mov al, ah
+        xor ah, ah
+        mov di, ax
+        mov di, mode_table[di]
+        or di, di
+        jz @error               ; or if mode_table has 0
+        ; Set up the mode
+        call cs:Screen_Mode.SCRSTT_init[di]
+        jc @error
+        mov mode_ptr, di
+    @end_1:
+
+    ; Parameter 2: color flag
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_2
+        mov al, ah
+        xor ah, ah
+        call cs:Screen_Mode.SCRSTT_color[di]
+    @end_2:
+
+    ; Parameter 3: active page
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_3
+        cmp ah, cs:Screen_Mode.num_pages[di]
+        jae @error
+        mov al, ah
+        xor ah, ah
+        call cs:Screen_Mode.SCRSTT_actpage[di]
+        jc @error
+        mov active_page, al
+    @end_3:
+
+    ; Parameter 4: visible page
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_4
+        cmp ah, cs:Screen_Mode.num_pages[di]
+        jae @error
+        mov al, ah
+        xor ah, ah
+        call cs:Screen_Mode.SCRSTT_vispage[di]
+        jc @error
+        mov visible_page, al
+    @end_4:
+
+@exit:
+    pop di
+    pop cx
+    pop bx
+    pop ax
+    clc
+    ret
+
+@error:
+    pop di
+    pop cx
+    pop bx
+    pop ax
+    stc
+    ret
+
+SCRSTT endp
+
+; Print a character to the screen
+; On entry:
+;     AL = character
+;     DH = column (1 left)
+;     DL = row (1 top)
+; Returns C clear for success
+; No caller checks the C flag
+public SCROUT
+SCROUT proc near
+
+    dispatch SCROUT_handler
+
+SCROUT endp
+
+; Read a character from the screen
+; On entry:
+;     C set if screen editor is calling
+;     DH = column (1 left)
+;     DL = row (1 top)
+; Returns C clear for success
+;     AL = character; AH = 0
+; Only the screen editor checks the C flag
+public SCRINP
+SCRINP proc near
+
+    dispatch SCRINP_handler
+
+SCRINP endp
+
+; Scroll window beginning at column AH, row AL,
+; extending through CH columns and CL rows,
+; to column BH, row BL
+; Rows and columns begin at 1
+; Returns: None
+public SCROLL
+SCROLL proc near
+
+    dispatch SCROLL_handler
+
+SCROLL endp
+
+; Clear the screen or the text window
+; On entry: If the CLS statement has a parameter, C is set and the parameter
+;           is in AL.
+;           Otherwise, C is clear and AL is 0.
+; Returns:  C clear if screen cleared
+;           SCNCLR and GRPINI called
+public CLRSCN
+CLRSCN proc near
+
+    dispatch CLRSCN_handler
+
+CLRSCN endp
+
+; Clear to end of line
+; On entry: DH = requested column (1 = left)
+;           DL = requested row (1 = top)
+; Returns: None.
+public CLREOL
+CLREOL proc near
+
+    dispatch CLREOL_handler
+
+CLREOL endp
+
+; Sets the cursor visibility and size according to the parameters to the
+; LOCATE statement.
+; On entry: AH = LOCATE parameter 3 present if nonzero
+;           AL = LOCATE parameter 3: cursor is visible if nonzero
+;           BH = LOCATE parameter 4 present
+;           BL = LOCATE parameter 4: start line of cursor
+;           CH = LOCATE parameter 5 present
+;           CL = LOCATE parameter 5: end line of cursor
+; Returns:  C set if a parameter was out of the valid range
+public CSRATR
+CSRATR proc near
+
+    dispatch CSRATR_handler
+
+CSRATR endp
+
+; On entry: AL = cursor type
+;                0 = off
+;                1 = insert mode (larger)
+;                2 = overwrite mode (smaller)
+;                3 = user mode
+;           DX = cursor position: 1-based (column, row)
+;                It is uncertain that DX is set
+; Returns: none
+public CSRDSP
+CSRDSP proc near
+
+    dispatch CSRDSP_handler
+
+CSRDSP endp
+
+; Print the screen
+; On entry: none
+; Returns:  none
+LCPY proc near
+
+    dispatch LCPY_handler
+
+LCPY endp
+
+; Read attribute at requested position
+; On entry: AL = column (1 = left)
+;           BL = row (1 = top)
+; Returns:  BL = attribute; BH = 0
+public SCRATR
+SCRATR proc near
+
+    dispatch SCRATR_handler
+
+SCRATR endp
+
+; Process parameters to the COLOR statement
+; On entry: BX = list of parameters:
+;                BX[0] = 1 byte: number of parameters specified
+;                followed by two bytes for each parameter:
+;                     A nonzero byte if the parameter was specified
+;                     A byte for the value of the parameter (ignored if the
+;                         first parameter is zero)
+; Call SCNSWI if BIOS mode changed
+; Returns: C set if error
+public SETCLR
+SETCLR proc near
+
+    push ax
+    push bx
+    push cx
+    push di
+
+    ; Get number of parameters
+    mov cl, [bx]
+    inc bx
+
+    ; Parameter 1: foreground color
+    dec cl
+    js @error   ; error if no parameters
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_1
+        cmp ah, 31
+        ja @error
+        mov foreground_color, ah
+    @end_1:
+
+    ; Parameter 2: background color
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_2
+        cmp ah, 7
+        ja @error
+        mov background_color, ah
+    @end_2:
+
+    ; Parameter 3: border color
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_3
+        cmp ah, 15
+        ja @error
+        mov border_color, ah
+    @end_3:
+
+@exit:
+    mov di, mode_ptr
+    call cs:Screen_Mode.SETCLR_handler[di]
+
+    pop di
+    pop cx
+    pop bx
+    pop ax
+    clc
+    ret
+
+@error:
+    pop cx
+    pop bx
+    pop ax
+    stc
+    ret
+
+SETCLR endp
+
+; Set screen width in columns
+; On entry: AL = number of requested columns
+; Returns C set if error
+public SWIDTH
+SWIDTH proc near
+
+    ; Dispatch only if the width changes, and update the width
+    cmp al, text_width
+    clc
+    je @F
+        push ax
+        push di
+        mov di, mode_ptr
+        call cs:Screen_Mode.SWIDTH_handler[di]
+        pop di
+        pop ax
+        jc @F
+            mov text_width, al
+            push cx
+            mov cl, 25
+            call SCNSWI
+            pop cx
+            call CLRSCN
+            call GRPINI
+            clc
+    @@:
+    ret
+
+SWIDTH endp
+
 ; Query foreground and background colors
 ; On entry: C set to get text colors, clear for graphics colors
 ; Returns: AX = foreground color
 ;          BX = background color
-PUBLIC GETFBC
+public GETFBC
 GETFBC proc near
+
+    dispatch GETFBC_handler
+
+GETFBC endp
+
+; Set foreground and background colors
+; On entry: AX = foreground color
+;           BX = background color
+; Returns: none
+public SETFBC
+SETFBC proc near
+
+    mov foreground_color, al
+    mov background_color, bl
+    dispatch SETFBC_handler
+
+SETFBC endp
+
+; Return format for function key display
+; Returns: BX points to a three byte structure
+;          byte 0: characters per key
+;          byte 1: number of keys to display
+;          byte 2: number of first function key
+public FKYFMT
+FKYFMT proc near
+
+    dispatch FKYFMT_handler
+
+FKYFMT endp
+
+; Unclear what this does. It seems to depend on Z set or clear and have
+; to do with display of function keys.
+; It sets internal variables giving the first key displayed and the number
+; of lines not displaying function keys. Z is set if function keys are
+; not displayed.
+; Returns:  Z clear if function keys are to be displayed
+public FKYADV
+FKYADV proc near
+
+    dispatch FKYADV_handler
+
+FKYADV endp
+
+; Return size of graphics screen
+; Returns: CX = maximum X coordinate
+;          DX = maximum Y coordinate
+public GRPSIZ
+GRPSIZ proc near
+
+    dispatch GRPSIZ_handler
+
+GRPSIZ endp
+
+;-----------------------------------------------------------------------------
+; Graphics mode screen support
+;-----------------------------------------------------------------------------
+
+; Set a cursor position retrieved from FETCHC
+; On entry: AL:BX = cursor position
+; Returns:  none
+public STOREC
+STOREC proc near
+
+    dispatch STOREC_handler
+
+STOREC endp
+
+; Retrieve the cursor position to be saved by STOREC
+; Returns: AL:BX = cursor position
+public FETCHC
+FETCHC proc near
+
+    dispatch FETCHC_handler
+
+FETCHC endp
+
+; Move one pixel up
+; On entry: none
+; Returns   none
+; Nothing in the released sources calls this
+public UPC
+UPC proc near
+
+    dispatch UPC_handler
+
+UPC endp
+
+; Move one pixel down
+; On entry: none
+; Returns   none
+public DOWNC
+DOWNC proc near
+
+    dispatch DOWNC_handler
+
+DOWNC endp
+
+; Move one pixel left
+; On entry: none
+; Returns   none
+public LEFTC
+LEFTC proc near
+
+    dispatch LEFTC_handler
+
+LEFTC endp
+
+; Move one pixel right
+; On entry: none
+; Returns   none
+public RIGHTC
+RIGHTC proc near
+
+    dispatch RIGHTC_handler
+
+RIGHTC endp
+
+; Clip coordinates to the screen boundaries
+; On entry: CX = X coordinate as signed integer
+;           DX = Y coordinate as signed integer
+; Returns:  CX = clipped X coordinate
+;           DX = clipped Y coordinate
+;           C set if coordinates are in bounds
+public SCALXY
+SCALXY proc near
+
+    dispatch SCALXY_handler
+
+SCALXY endp
+
+; Map pixel coordinates to a cursor position as returned by FETCHC
+; On entry: CX = X coordinate
+;           CY = Y coordinate
+; Returns: none
+public MAPXYC
+MAPXYC proc near
+
+    dispatch MAPXYC_handler
+
+MAPXYC endp
+
+; Set the pixel attribute to be drawn
+; On entry: AL = attribute
+; Returns:  none
+public SETATR
+SETATR proc near
+
+    ; TODO: Graphics modes are not yet supported. For 16 color EGA and VGA
+    ; modes, set the hardware registers here.
+    mov graph_attr, al
+    dispatch SETATR_handler
+
+SETATR endp
+
+; Read pixel at current position
+; Returns: AL = pixel attribute
+public READC
+READC proc near
+
+    dispatch READC_handler
+
+READC endp
+
+; Write pixel at current location, using current attribute
+; Returns: none
+public SETC_
+SETC_ proc near
+
+    dispatch SETC_handler
+
+SETC_ endp
+
+; Write multiple pixels starting at current position and proceeding right
+; On entry: BX = pixel count
+; Returns:  none
+public NSETCX
+NSETCX proc near
+
+    dispatch NSETCX_handler
+
+NSETCX endp
+
+; Return aspect ratio of pixel
+; Returns: BX = pixel width divided by pixel height as 8.8 fixed point
+;          DX = pixel height divided by pixel width as 8.8 fixed point
+public GTASPC
+GTASPC proc near
+
+    dispatch GTASPC_handler
+
+GTASPC endp
+
+; Return number of bits per pixel, or 0 if text mode
+; Returns:  pixel size in AL
+public PIXSIZ
+PIXSIZ proc near
+
+    dispatch PIXSIZ_handler
+
+PIXSIZ endp
+
+;-----------------------------------------------------------------------------
+; Bit-blit support via the GET and PUT statements
+;-----------------------------------------------------------------------------
+
+; Set up for bit-blit via NREAD or NWRITE
+; On entry: BX = pixel array
+;           CX = number of bits
+;           If C set:
+;           AL = index to a drawing routine (0-4)
+;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
+public PGINIT
+PGINIT proc near
+
+    dispatch PGINIT_handler
+
+PGINIT endp
+
+; Read a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          main memory address advanced to next line
+;          pixels read in packed form into main memory
+public NREAD
+NREAD proc near
+
+    dispatch NREAD_handler
+
+NREAD endp
+
+; Write a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          local memory address advanced to the next line
+public NWRITE
+NWRITE proc near
+
+    dispatch NWRITE_handler
+
+NWRITE endp
+
+;-----------------------------------------------------------------------------
+; Support for the PAINT statement
+;-----------------------------------------------------------------------------
+; Set up flood fill algorithm
+; On entry: AL = boundary attribute
+; Returns: none
+public PNTINI
+PNTINI proc near
+
+    dispatch PNTINI_handler
+
+PNTINI endp
+
+; Move current position down with boundary check
+; Returns: C set if moving down would pass the bottom of the screen;
+;          the current position is unchanged in that case
+; This differs from DOWNC only in the boundary check
+public TDOWNC
+TDOWNC proc near
+
+    dispatch TDOWNC_handler
+
+TDOWNC endp
+
+; Move current position up with boundary check
+; Returns: C set if moving up would pass the top of the screen;
+;          the current position is unchanged in that case
+; This differs from UPC only in the boundary check
+public TUPC
+TUPC proc near
+
+    dispatch TUPC_handler
+
+TUPC endp
+
+; On entry: Setup done with PNTINI
+;           DX = number of boundary pixels to skip right
+;           No pixels are painted if this many pixels in the boundary color
+;           are found
+; Returns:  BX = number of pixels painted
+;           CL != 0 if at least one pixel changed
+;           CSAVEA and CSAVEM set to the point where drawing began, in the
+;           format returned by FETCHC
+public SCANR
+SCANR proc near
+
+    dispatch SCANR_handler
+
+SCANR endp
+
+; Fill pixels to the right until the boundary color is found
+; On entry: Setup done with PNTINI
+; Returns:  BX = number of pixels painted
+;           CL != 0 if at least one pixel changed
+public SCANL
+SCANL proc near
+
+    dispatch SCANL_handler
+
+SCANL endp
+
+;-----------------------------------------------------------------------------
+; Generic handlers for modes not requiring special handling
+;-----------------------------------------------------------------------------
+
+; Stub for unimplemented graphics handlers
+graphics_stub proc near private
+
+    stc
+    ret
+
+graphics_stub endp
+
+; Set the active page
+generic_SCRSTT_actpage proc near private
+
+    clc
+    ret
+
+generic_SCRSTT_actpage endp
+
+; Set the visible page
+; On entry: AL = requested page
+generic_SCRSTT_vispage proc near private
+
+    push bx
+    push cx
+
+    ; Save for comparison afterward
+    mov cl, al
+
+    ; Set the page
+    mov ah, 05h
+    int 10h
+
+    ; Did we get the page we wanted?
+    mov ah, 0Fh
+    int 10h
+    cmp bh, cl
+    jne @error
+
+    ; We got the page we wanted
+    pop cx
+    pop bx
+    clc
+    ret
+
+@error:
+    ; The page was not set
+    pop cx
+    pop bx
+    stc
+    ret
+
+generic_SCRSTT_vispage endp
+
+; Print a character to the screen
+; On entry:
+;     AL = character
+;     DH = column (1 left)
+;     DL = row (1 top)
+; Returns C clear for success
+; No caller checks the C flag
+generic_SCROUT proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    call convert_cursor
+    call set_cursor
+    mov ah, 09h
+    mov bh, 0
+    mov bl, 07h
+    mov cx, 1
+    int 10h
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    clc
+    ret
+
+generic_SCROUT endp
+
+; Scroll window beginning at column AH, row AL,
+; extending through CH columns and CL rows,
+; to column BH, row BL
+; Rows and columns begin at 1
+; Returns: None
+generic_SCROLL proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+
+    ; Make all coordinates 0-based
+    dec ah
+    dec al
+    dec bh
+    dec bl
+
+    ; Scroll vertically
+    ; AH <- left; BH <- max(AH, BH)
+    cmp ah, bh
+    jb @F
+        xchg ah, bh
+    @@:
+    ; BH <- right
+    add bh, ch
+    dec bh
+    ; DH <- BIOS function
+    mov dh, 06h ; scroll up
+    mov dl, al
+    sub dl, bl
+    jnc @F
+        mov dh, 07h ; scroll down
+        neg dl
+        xchg al, bl
+    @@:
+    ; BL = top
+    ; AL <- bottom
+    add al, cl
+    dec al
+
+    ; Have: AH = left; BL = top; BH = right; AL = bottom; DL = distance; DH = function
+    ; Want: CL = left; CH = top; DL = right, DH = bottom; AL = distance; AH = function
+    mov ch, bl  ; CH <- top
+    mov cl, ah  ; CL <- left
+    mov ah, dh  ; AH <- function
+    mov dh, al  ; DH <- bottom
+    mov al, dl  ; AL <- distance
+    mov dl, bh  ; DL <- right
+    mov bh, 07h ; attribute
+    int 10h
+
+    ; TODO: scroll horizontally
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+generic_SCROLL endp
+
+; Clear the screen or the text window
+; On entry: If the CLS statement has a parameter, C is set and the parameter
+;           is in AL.
+;           Otherwise, C is clear and AL is 0.
+; Returns:  C clear if screen cleared
+;           SCNCLR and GRPINI called
+generic_CLRSCN proc near private
+
+    cmp al, 0
+    stc
+    jne @end
+
+        push ax
+        push bx
+        push cx
+        push dx
+
+        mov ax, 0600h
+        mov bh, 07h
+        xor cx, cx
+        mov dh, max_line
+        inc dh
+        mov dl, text_width
+        int 10h
+
+        call SCNCLR
+
+        pop dx
+        pop cx
+        pop bx
+        pop ax
+        clc
+
+    @end:
+    ret
+
+generic_CLRSCN endp
+
+; Clear to end of line
+; On entry: DH = requested column (1 = left)
+;           DL = requested row (1 = top)
+; Returns: None.
+generic_CLREOL proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+
+    call convert_cursor
+    call set_cursor
+
+    mov cl, text_width
+    xor ch, ch
+    sub cl, dl
+    jbe @F      ; Don't try to clear zero or fewer columns
+        mov ax, 0920h
+        mov bx, 0007h
+        int 10h
+    @@:
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+generic_CLREOL endp
+
+; Sets the cursor visibility and size according to the parameters to the
+; LOCATE statement.
+; On entry: AH = LOCATE parameter 3 present if nonzero
+;           AL = LOCATE parameter 3: cursor is visible if nonzero
+;           BH = LOCATE parameter 4 present
+;           BL = LOCATE parameter 4: start line of cursor
+;           CH = LOCATE parameter 5 present
+;           CL = LOCATE parameter 5: end line of cursor
+; Returns:  C set if a parameter was out of the valid range
+generic_CSRATR proc near private
+
+    ; TODO: implement the cursor visible flag
+    test bh, bh
+    je @F
+        cmp bl, 31
+        ja @error
+        mov byte ptr cursor_shape+1, bl
+    @@:
+    test ch, ch
+    je @F
+        cmp cl, 31
+        ja @error
+        mov byte ptr cursor_shape+0, cl
+    @@:
+
+    clc
+    ret
+
+@error:
+    stc
+    ret
+
+generic_CSRATR endp
+
+; On entry: AL = cursor type
+;                0 = off
+;                1 = insert mode (larger)
+;                2 = overwrite mode (smaller)
+;                3 = user mode
+;           DX = cursor position: 1-based (column, row)
+;                It is uncertain that DX is set
+; Returns: none
+generic_CSRDSP proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+
+    ; TODO: For now, assume 16 line character
+    cmp al, 0
+    jne @F
+        mov cx, 1F1Fh ; start line 31, end line 31
+        jmp @set_cursor
+    @@:
+    cmp al, 1
+    jne @F
+        mov cx, 000Dh ; start line 0, end line 13
+        jmp @set_cursor
+    @@:
+    cmp al, 2
+    jne @F
+        mov cx, 0B0Dh ; start line 11, end line 13
+        jmp @set_cursor
+    @@:
+        mov cx, cursor_shape
+    @set_cursor:
+
+    ; According to the Ralf Brown Interrupt List, some BIOSes lock up if
+    ; AL is not equal to the video mode
+    mov ah, 0Fh
+    int 10h     ; AL <- video mode
+
+    ; Set the cursor shape
+    mov ah, 01h
+    int 10h
+
+    ; Set the cursor position
+    call convert_cursor
+    call set_cursor
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+generic_CSRDSP endp
+
+; Print the screen
+; On entry: none
+; Returns:  none
+generic_LCPY proc near private
+
+    int 05h ; Print-screen BIOS call
+    ret
+
+generic_LCPY endp
+
+; Query foreground and background colors
+; On entry: C set to get text colors, clear for graphics colors
+; Returns: AX = foreground color
+;          BX = background color
+generic_GETFBC proc near private
 
     ; TODO: honor the C flag
     mov al, foreground_color
@@ -1322,26 +1797,360 @@ GETFBC proc near
     mov bh, 0
     ret
 
-GETFBC endp
+generic_GETFBC endp
 
-; Set foreground and background colors
-; On entry: AX = foreground color
-;           BX = background color
-; Returns: none
-PUBLIC SETFBC
-SETFBC proc near
+; Return format for function key display
+; Returns: BX points to a three byte structure
+;          byte 0: characters per key
+;          byte 1: number of keys to display
+;          byte 2: number of first function key
+generic_FKYFMT proc near private
 
-    mov foreground_color, al
-    mov background_color, bl
-    call set_text_attr
+    ; Stub: fixed format for 80 column display
+    mov bx, offset fkey_format
+    mov byte ptr 0[bx], 6
+    mov byte ptr 1[bx], 10
+    mov byte ptr 2[bx], 1
     ret
 
-SETFBC endp
+generic_FKYFMT endp
+
+; Unclear what this does. It seems to depend on Z set or clear and have
+; to do with display of function keys.
+; It sets internal variables giving the first key displayed and the number
+; of lines not displaying function keys. Z is set if function keys are
+; not displayed.
+; Returns:  Z clear if function keys are to be displayed
+generic_FKYADV proc near private
+
+    ; TODO: handle 40 column display
+    push ax
+    jnz @keys_off
+        mov max_line, 23
+        mov ax, 1
+        jmp @end
+    @keys_off:
+        mov max_line, 24
+        mov ax, 0
+    @end:
+    or ax, ax
+    pop ax
+    ret
+
+generic_FKYADV endp
+
+; Convert 1-based (column, row) to 0-based (row, column)
+convert_cursor proc near private
+
+    xchg dl, dh
+    dec dl
+    dec dh
+    ret
+
+convert_cursor endp
+
+; Set the cursor to 0-based (row, column)
+set_cursor proc near private
+
+    cmp dh, 25
+    jae @F
+    cmp dl, 80
+    jae @F
+        push ax
+        push bx
+        mov bh, 0
+        mov ah, 02h
+        int 10h
+        pop bx
+        pop ax
+    @@:
+    ret
+
+set_cursor endp
+
+;-----------------------------------------------------------------------------
+; Screen mode 0: monochrome or color text
+;-----------------------------------------------------------------------------
+
+; Set up mode 0
+mode_0_SCRSTT_init proc near private
+
+    push bx
+    push cx
+
+    ; Query the current mode and width
+    mov ah, 0Fh
+    int 10h
+    cmp ah, 40
+    mov al, 3     ; BIOS mode for 80 columns
+    jg @F
+        mov al, 1 ; BIOS mode for 40 columns
+    @@:
+    mov cl, al    ; Save this to check for success
+    mov ah, 00h
+    int 10h       ; Set the BIOS mode
+
+    ; Did the mode switch succeed?
+    mov ah, 0Fh
+    int 10h
+    cmp al, cl
+    jne @monochrome
+        ; We got the requested mode.
+        mov text_width, ah
+        mov ax, 0B800h
+        mov video_seg, ax 
+    jmp @end
+    @monochrome:
+        ; A monochrome adapter (MDA or Hercules) will reject the switch to
+        ; BIOS mode 1 or 3.
+        mov ax, 0B000h
+        mov video_seg, ax
+        ; Set BIOS mode 7, to ensure the registers are set up correctly
+        mov ax, 0007h
+        int 10h
+        mov text_width, 80
+    @end:
+
+    pop cx
+    pop bx
+    clc
+    ret
+
+mode_0_SCRSTT_init endp
+
+; Color flag for mode 0
+; On entry: AX = color flag (SCREEN parameter 2)
+mode_0_SCRSTT_color proc near private
+
+    push bx
+    push cx
+
+    ; Get BIOS video mode
+    mov ch, al
+    mov ah, 0Fh
+    int 10h
+    ; Affects BIOS modes 0-3 only; ignored for mode 7
+    cmp al, 3
+    ja @end
+        shr al, 1
+        cmp ch, 1 ; set C if CH != 0
+        cmc
+        rcl al, 1 ; rotate C into bit 1 of mode
+        mov ah, 00h
+        int 10h
+        call SCNSWI
+    @end:
+
+    pop cx
+    pop bx
+    ret
+
+mode_0_SCRSTT_color endp
+
+; Print a character to the screen
+; On entry:
+;     AL = character
+;     DH = column (1 left)
+;     DL = row (1 top)
+; Returns C clear for success
+; No caller checks the C flag
+mode_0_SCROUT proc near private
+
+    push ax
+    push di
+    push es
+
+    call mode_0_xy_to_address
+    jc @F
+        mov ah, text_attr
+        mov es:[di], ax
+    @@:
+
+    pop es
+    pop di
+    pop ax
+    ret
+
+mode_0_SCROUT endp
+
+; Read a character from the screen
+; On entry:
+;     C set if screen editor is calling
+;     DH = column (1 left)
+;     DL = row (1 top)
+; Returns C clear for success
+;     AL = character; AH = 0
+; Only the screen editor checks the C flag
+mode_0_SCRINP proc near private
+
+    ; TODO: support graphics modes
+    push di
+    push es
+    call mode_0_xy_to_address
+    mov ax, 0
+    jc @end
+        mov al, es:[di]
+    @end:
+    pop es
+    pop di
+    ret
+
+mode_0_SCRINP endp
+
+; Read attribute at requested position
+; On entry: AL = column (1 = left)
+;           BL = row (1 = top)
+; Returns:  BL = attribute; BH = 0
+mode_0_SCRATR proc near private
+
+    ; TODO: support graphics modes
+    push di
+    push es
+    push dx
+    mov dx, bx
+    call mode_0_xy_to_address
+    mov bx, 0
+    jc @end
+        mov bl, es:[di+1]
+    @end:
+    pop dx
+    pop es
+    pop di
+    ret
+
+mode_0_SCRATR endp
+
+; Set up configured colors
+; On entry: foreground_color, background_color and border_color updated
+mode_0_SETCLR proc near private
+
+    call mode_0_set_text_attr
+    mov bl, border_color
+    mov bh, 0
+    mov ah, 0Bh
+    int 10h
+    ret
+
+mode_0_SETCLR endp
+
+; Set screen width in columns
+; On entry: AL = number of requested columns
+; Returns C set if error
+mode_0_SWIDTH proc near private
+
+    cmp video_seg, 0B000h
+    je @monochrome
+        ; Color adapters can do 40 or 80 columns
+        cmp al, 40
+        je @40_columns
+        cmp al, 80
+        jne @error
+            ; Set 80 columns
+            push bx
+            mov ah, 0Fh     ; Get current BIOS mode
+            int 10h
+            or al, 02h      ; Set the corresponding 80 column mode
+            mov ah, 00h
+            int 10h
+            pop bx
+            jmp @ok
+        @40_columns:
+            ; Set 40 columns
+            push bx
+            mov ah, 0Fh     ; Get current BIOS mode
+            int 10h
+            and al, 0FDh    ; Set the corresponding 40 column mode
+            mov ah, 00h
+            int 10h
+            pop bx
+            jmp @ok
+    @monochrome:
+        ; Monochrome adapters can do 80 columns only
+        cmp al, 80
+        jne @error
+        ; No action is needed
+
+@ok:
+    clc
+    ret
+
+@error:
+    stc
+    ret
+
+mode_0_SWIDTH endp
+
+; Set foreground and background colors
+; On entry: foreground_color and background_color set
+; Returns: none
+mode_0_SETFBC proc near private
+
+    call mode_0_set_text_attr
+    ret
+
+mode_0_SETFBC endp
+
+; Return size of graphics screen
+; Returns: CX = maximum X coordinate
+;          DX = maximum Y coordinate
+mode_0_GRPSIZ proc near private
+
+    ; TODO: For now, we support only 80x25 text mode, but GRPINI calls this
+    mov cx,80*8 - 1
+    mov dx,25*8 - 1
+    ret
+
+mode_0_GRPSIZ endp
+
+; Convert 1-based (column, row) to text frame buffer address
+; On entry: DX = 1-based (column, row)
+; Returns:  C set if out of bounds
+;           else ES:DI = frame buffer address of character cell
+mode_0_xy_to_address proc near private
+
+    ; TODO: If we support modes greater than 80x25, we'll need to check
+    ; the row at the configured height, and calculate the page differently
+
+    push dx
+    dec dh              ; 1-based to 0-based
+    dec dl
+    cmp dh, text_width  ; check bounds
+    jae @bounds
+    cmp dl, 25
+    jae @bounds
+
+    push ax
+    mov al, dl          ; AL <- row
+    mov dl, dh          ; DL <- column
+    xor dh, dh          ; zero extend column
+    mov di, dx          ; DI <- column (MUL clobbers DX)
+    xor ah, ah          ; zero extend row
+    mul text_width      ; AX <- row * text_width
+    add di, ax          ; DI <- row*text_width + column
+    shl di, 1           ; Two bytes per character
+    mov ah, active_page ; Page on which we draw
+    mov al, 0           ; Load into high byte
+    repeat 4
+        shl ah, 1       ; shift left four, for page * 4096
+    endm
+    add di, ax
+    mov es, video_seg   ; Segment for color modes
+    pop ax
+    pop dx
+    clc
+    ret
+
+@bounds:
+    pop dx
+    stc
+    ret
+
+mode_0_xy_to_address endp
 
 ; On entry: foreground_color and background_color set
 ; Returns: none in registers
 ; Sets text_attr for use by text routines
-set_text_attr proc near private
+mode_0_set_text_attr proc near private
 
     push cx
 
@@ -1361,248 +2170,39 @@ set_text_attr proc near private
     pop cx
     ret
 
-set_text_attr endp
+mode_0_set_text_attr endp
 
-; Return format for function key display
-; Returns: BX points to a three byte structure
-;          byte 0: characters per key
-;          byte 1: number of keys to display
-;          byte 2: number of first function key
-PUBLIC FKYFMT
-FKYFMT proc near
+;-----------------------------------------------------------------------------
+; Screen mode 1: CGA 320x200, 4 colors
+;-----------------------------------------------------------------------------
 
-    ; Stub: fixed format for 80 column display
-    mov bx, offset fkey_format
-    mov byte ptr 0[bx], 6
-    mov byte ptr 1[bx], 10
-    mov byte ptr 2[bx], 1
+; Color flag for mode 1
+; On entry: AX = color flag (SCREEN parameter 2)
+mode_1_SCRSTT_color proc near private
+
+    push bx
+    push cx
+
+    ; Get BIOS video mode
+    mov ch, al
+    mov ah, 0Fh
+    int 10h
+
+    ; This differs from mode_0_SCRSTT_color in that bit 0 set means
+    ; monochrome rather than color, and we don't need to check for the BIOS
+    ; mode in range (we are always in mode 4 or 5).
+    shr al, 1
+    cmp ch, 1 ; set C if CH == 0
+    rcl al, 1 ; rotate C into bit 1 of mode
+    mov ah, 00h
+    int 10h
+    call SCNSWI
+
+    pop cx
+    pop bx
     ret
 
-FKYFMT endp
-
-; Unclear what this does. It seems to depend on Z set or clear and have
-; to do with display of function keys.
-; It sets internal variables giving the first key displayed and the number
-; of lines not displaying function keys. Z is set if function keys are
-; not displayed.
-; Returns:  Z clear if function keys are to be displayed
-PUBLIC FKYADV
-FKYADV proc near
-
-    ; TODO: handle 40 column display
-    push ax
-    jnz @keys_off
-        mov max_line, 23
-        mov ax, 1
-        jmp @end
-    @keys_off:
-        mov max_line, 24
-        mov ax, 0
-    @end:
-    or ax, ax
-    pop ax
-    ret
-
-FKYADV endp
-
-;-----------------------------------------------------------------------------
-; Graphics mode screen support
-;-----------------------------------------------------------------------------
-
-; Return size of graphics screen
-; Returns: CX = maximum X coordinate
-;          DX = maximum Y coordinate
-PUBLIC GRPSIZ
-GRPSIZ proc near
-
-    ; TODO: For now, we support only 80x25 text mode, but GRPINI calls this
-    mov cx,80*8 - 1
-    mov dx,25*8 - 1
-    ret
-
-GRPSIZ endp
-
-; Set a cursor position retrieved from FETCHC
-; On entry: AL:BX = cursor position
-; Returns:  none
-PUBLIC STOREC
-STOREC:
-    INT 3
-
-; Retrieve the cursor position to be saved by STOREC
-; Returns: AL:BX = cursor position
-PUBLIC FETCHC
-FETCHC:
-    INT 3
-
-; Move one pixel up
-; On entry: none
-; Returns   none
-; Nothing in the released sources calls this
-PUBLIC UPC
-UPC:
-    INT 3
-
-; Move one pixel down
-; On entry: none
-; Returns   none
-PUBLIC DOWNC
-DOWNC:
-    INT 3
-
-; Move one pixel left
-; On entry: none
-; Returns   none
-PUBLIC LEFTC
-LEFTC:
-    INT 3
-
-; Move one pixel right
-; On entry: none
-; Returns   none
-PUBLIC RIGHTC
-RIGHTC:
-    INT 3
-
-; Clip coordinates to the screen boundaries
-; On entry: CX = X coordinate as signed integer
-;           DX = Y coordinate as signed integer
-; Returns:  CX = clipped X coordinate
-;           DX = clipped Y coordinate
-;           C set if coordinates are in bounds
-PUBLIC SCALXY
-SCALXY:
-    INT 3
-
-; Map pixel coordinates to a cursor position as returned by FETCHC
-; On entry: CX = X coordinate
-;           CY = Y coordinate
-; Returns: none
-PUBLIC MAPXYC
-MAPXYC:
-    INT 3
-
-; Set the pixel attribute to be drawn
-; On entry: AL = attribute
-; Returns:  none
-PUBLIC SETATR
-SETATR proc near
-
-    ; TODO: Graphics modes are not yet supported. For 16 color EGA and VGA
-    ; modes, set the hardware registers here.
-    mov graph_attr, al
-    ret
-
-SETATR endp
-
-; Read pixel at current position
-; Returns: AL = pixel attribute
-PUBLIC READC
-READC:
-    INT 3
-
-; Write pixel at current location, using current attribute
-; Returns: none
-PUBLIC SETC_
-SETC_:
-    INT 3
-
-; Write multiple pixels starting at current position and proceeding right
-; On entry: BX = pixel count
-; Returns:  none
-PUBLIC NSETCX
-NSETCX:
-    INT 3
-
-; Return aspect ratio of pixel
-; Returns: BX = pixel width divided by pixel height as 8.8 fixed point
-;          DX = pixel height divided by pixel width as 8.8 fixed point
-PUBLIC GTASPC
-GTASPC:
-    INT 3
-
-; Return number of bits per pixel, or 0 if text mode
-; Returns:  pixel size in AL
-PUBLIC PIXSIZ
-PIXSIZ:
-    INT 3
-
-;-----------------------------------------------------------------------------
-; Bit-blit support via the GET and PUT statements
-;-----------------------------------------------------------------------------
-
-; Set up for bit-blit via NREAD or NWRITE
-; On entry: BX = pixel array
-;           CX = number of bits
-;           If C set:
-;           AL = index to a drawing routine (0-4)
-;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
-PUBLIC PGINIT
-PGINIT:
-    INT 3
-
-; Read a line of pixels
-; On entry: PGINIT complete
-; Returns: none in registers
-;          main memory address advanced to next line
-;          pixels read in packed form into main memory
-PUBLIC NREAD
-NREAD:
-    INT 3
-
-; Write a line of pixels
-; On entry: PGINIT complete
-; Returns: none in registers
-;          local memory address advanced to the next line
-PUBLIC NWRITE
-NWRITE:
-    INT 3
-
-;-----------------------------------------------------------------------------
-; Support for the PAINT statement
-;-----------------------------------------------------------------------------
-; Set up flood fill algorithm
-; On entry: AL = boundary attribute
-; Returns: none
-PUBLIC PNTINI
-PNTINI:
-    INT 3
-
-; Move current position down with boundary check
-; Returns: C set if moving down would pass the bottom of the screen;
-;          the current position is unchanged in that case
-; This differs from DOWNC only in the boundary check
-PUBLIC TDOWNC
-TDOWNC:
-    INT 3
-
-; Move current position up with boundary check
-; Returns: C set if moving up would pass the top of the screen;
-;          the current position is unchanged in that case
-; This differs from UPC only in the boundary check
-PUBLIC TUPC
-TUPC:
-    INT 3
-
-; On entry: Setup done with PNTINI
-;           DX = number of boundary pixels to skip right
-;           No pixels are painted if this many pixels in the boundary color
-;           are found
-; Returns:  BX = number of pixels painted
-;           CL != 0 if at least one pixel changed
-;           CSAVEA and CSAVEM set to the point where drawing began, in the
-;           format returned by FETCHC
-PUBLIC SCANR
-SCANR:
-    INT 3
-
-; Fill pixels to the right until the boundary color is found
-; On entry: Setup done with PNTINI
-; Returns:  BX = number of pixels painted
-;           CL != 0 if at least one pixel changed
-PUBLIC SCANL
-SCANL:
-    INT 3
+mode_1_SCRSTT_color endp
 
 ;-----------------------------------------------------------------------------
 ; Speaker support
@@ -1858,6 +2458,15 @@ blink_flag db ?
 
 ; Function key format returned by FKYFMT
 fkey_format db 3 dup (?)
+
+; Pointer to screen mode structure
+mode_ptr dw ?
+
+; Segment of video frame buffer
+video_seg dw ?
+
+; Width of text screen in columns
+text_width db ?
 
 ; Shape of text cursor set by CSRDSP
 cursor_shape dw 0B0Dh ; Initially in overwrite mode
