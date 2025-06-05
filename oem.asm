@@ -8,6 +8,10 @@ include OEM.H
 extrn SCNSWI:near
 extrn GRPINI:near
 extrn SCNCLR:near
+extrn KYBCLR:near
+extrn SFTOFF:near
+extrn BASVAR:near
+extrn FKYSNS:near
 
 ; For COMx port comnfiguration
 COM_rx_size = 256 ; Default size of receive buffer
@@ -27,9 +31,21 @@ COM_tx_size = 128 ; Size of transmit buffer
 PUBLIC GWINI
 ; TODO: Query video hardware and determine supported modes.
 ; For now, we support only text mode in 80x25.
-GWINI:
+GWINI proc near
+
     push ax
+    push bx
     push cx
+    push es
+
+    ; If we have an EGA or VGA, set blink mode
+    mov bx, 0040h
+    mov es, bx
+    mov al, es:[0065h]
+    mov blink_flag, al ; to restore on exit
+    mov bl, 1
+    mov ax, 1003h
+    int 10h
 
     ; Assume we're in text mode at 80 x 25
     mov  al,80
@@ -39,9 +55,13 @@ GWINI:
     call CLRSCN
     call GRPINI
 
+    pop es
     pop cx
+    pop bx
     pop ax
     ret
+
+GWINI endp
 
 ; Get OEM header string
 ; On entry: none
@@ -50,10 +70,13 @@ GWINI:
 ;              BX = Offset from CS of header string to be printed at start
 ;                   String ends in a null character
 PUBLIC GETHED
-GETHED:
+GETHED proc near
+
     xor bx, bx                  ; Set Z to indicate a header string is provided
     mov bx, offset oem_header   ; Address of the header string
     ret
+
+GETHED endp
 
 oem_header db "GW-BASIC for FreeDOS, copyright 2025 Ray Chason.", 0Dh, 0Ah, 0
 
@@ -82,7 +105,22 @@ BASIC_DS dw ?
 PUBLIC GWTERM
 GWTERM proc near
 
-    ; Nothing to shut down yet
+    push ax
+    push bx
+    push cx
+
+    ; Set blink mode back to starting state
+    mov bl, blink_flag
+    mov cl, 5
+    shr bl, cl
+    and bl, 1
+
+    mov ax, 1003h
+    int 10h
+
+    pop cx
+    pop bx
+    pop ax
     ret
 
 GWTERM endp
@@ -128,6 +166,22 @@ KEYINP proc near
         je @control
         cmp al, 20h
         jae @end_normal
+            ; Return ESC as 0xFF15
+            cmp al, 1Bh
+            jne @F
+                mov ax, 0FF15h
+                or ax, ax
+                stc
+                ret
+            @@:
+            ; If 0xFF00+ctrl represents an editor key, return 0x0000+ctrl
+            push bx
+            xor bh, bh
+            mov bl, al
+            mov bl, ctrl_table[bx]
+            or bl, bl
+            pop bx
+            je @end_normal
         @control:
             mov ah, 0FFh ; control keys
         @end_normal:
@@ -399,6 +453,14 @@ INKMAP proc near
                 stc
                 ret
         @end_80:
+        ; Check for ESC
+        cmp ax, 0FF15h
+        jne @F
+            mov ax, 001Bh
+            or ax, ax
+            clc
+            ret
+        @@:
         ; Check for character in ctrl_table
         cmp ah, 0FFh
         jne @end2
@@ -440,14 +502,15 @@ INFMAP proc near
 
 INFMAP endp
 
-; "Map super shift key to letter in AL and count"
-; On entry: AL = "super shift key"?
-; Returns:  AL = letter?
+; Map ALT-shifted letter to a letter in AL and a count
+; On entry: AX = key code representing an ALT-shifted letter, as returned
+;                by KEYINP
+; Returns:  AL = letter
 ;           CH = count
 PUBLIC MAPSUP ; Keyboard
 MAPSUP proc near
 
-    ; Stub
+    mov ch, 1
     ret
 
 MAPSUP endp
@@ -475,7 +538,8 @@ if 0
     call convert_cursor
     call set_cursor
     mov ah, 09h
-    mov bx, 0007h
+    mov bh, 0
+    mov bl, 07h
     mov cx, 1
     int 10h
     pop dx
@@ -492,7 +556,7 @@ else
 
     call xy_to_address
     jc @F
-        mov ah, 07h ; attribute
+        mov ah, text_attr
         mov es:[di], ax
     @@:
 
@@ -532,6 +596,12 @@ xy_to_address proc near private
     mul dx
     add di, ax      ; DI <- row*80 + column
     shl di, 1       ; Two bytes per character
+    mov ah, active_page ; Page on which we draw
+    mov al, 0       ; Load into high byte
+    repeat 4
+        shl ah, 1   ; shift left four, for page * 4096
+    endm
+    add di, ax
     mov ax, 0B800h  ; Segment for color modes
     mov es, ax
     pop ax
@@ -712,8 +782,30 @@ CLREOL endp
 ;           CL = LOCATE parameter 5: end line of cursor
 ; Returns:  C set if a parameter was out of the valid range
 PUBLIC CSRATR
-CSRATR:
-    INT 3
+CSRATR proc near
+
+    ; TODO: implement the cursor visible flag
+    test bh, bh
+    je @F
+        cmp bl, 31
+        ja @error
+        mov byte ptr cursor_shape+1, bl
+    @@:
+    test ch, ch
+    je @F
+        cmp cl, 31
+        ja @error
+        mov byte ptr cursor_shape+0, cl
+    @@:
+
+    clc
+    ret
+
+@error:
+    stc
+    ret
+
+CSRATR endp
 
 ; On entry: AL = cursor type
 ;                0 = off
@@ -749,7 +841,6 @@ CSRDSP proc near
     @@:
         mov cx, cursor_shape
     @set_cursor:
-    mov cursor_shape, cx
 
     ; According to the Ralf Brown Interrupt List, some BIOSes lock up if
     ; AL is not equal to the video mode
@@ -805,16 +896,36 @@ set_cursor endp
 ; On entry: none
 ; Returns:  none
 PUBLIC LCPY
-LCPY:
-    INT 3
+LCPY proc near
+
+    int 05h ; Print-screen BIOS call
+    ret
+
+LCPY endp
 
 ; Read attribute at requested position
 ; On entry: AL = column (1 = left)
 ;           BL = row (1 = top)
 ; Returns:  BL = attribute; BH = 0
 PUBLIC SCRATR
-SCRATR:
-    INT 3
+SCRATR proc near
+
+    ; TODO: support graphics modes
+    push di
+    push es
+    push dx
+    mov dx, bx
+    call xy_to_address
+    mov bx, 0
+    jc @end
+        mov bl, es:[di+1]
+    @end:
+    pop dx
+    pop es
+    pop di
+    ret
+
+SCRATR endp
 
 ; Process parameters to the SCREEN statement
 ; On entry: BX = list of parameters:
@@ -826,8 +937,97 @@ SCRATR:
 ; Call SCNSWI if BIOS mode changed
 ; Returns: C set if error
 PUBLIC SCRSTT
-SCRSTT:
-    INT 3
+SCRSTT proc near
+
+    push ax
+    push bx
+    push cx
+
+    ; Get number of parameters
+    mov cl, [bx]
+    inc bx
+
+    ; Parameter 1: screen mode
+    ; At present, only 80x25 text mode is supported
+    dec cl
+    js @error   ; error if no parameters
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_1
+        cmp ah, 0
+        jne @error
+    @end_1:
+
+    ; Parameter 2: color flag
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_2
+        ; Get BIOS video mode
+        mov ch, ah
+        mov ah, 0Fh
+        int 10h
+        ; Affects modes 0-5 only; ignored for other modes
+        cmp al, 5
+        ja @end_2
+            shr al, 1
+            cmp ch, 1 ; set C if CH == 0
+            cmc       ; set C if CH != 0
+            rcl al, 1 ; rotate C into bit 1 of mode
+            ; Meaning of bit 1 is reversed for modes 4-5
+            cmp al, 4
+            jb @F
+                xor al, 1
+            @@:
+            mov ah, 00h
+            int 10h
+    @end_2:
+
+    ; Parameter 3: active page
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_3
+        cmp ah, 7
+        ja @error
+        mov active_page, ah
+    @end_3:
+
+    ; Parameter 4: visible page
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_4
+        cmp ah, 7
+        ja @error
+        mov visible_page, ah
+        mov al, ah
+        mov ah, 05h
+        int 10h
+    @end_4:
+
+@exit:
+    pop cx
+    pop bx
+    pop ax
+    clc
+    ret
+
+@error:
+    pop cx
+    pop bx
+    pop ax
+    stc
+    ret
+
+SCRSTT endp
 
 ; Process parameters to the COLOR statement
 ; On entry: BX = list of parameters:
@@ -839,15 +1039,90 @@ SCRSTT:
 ; Call SCNSWI if BIOS mode changed
 ; Returns: C set if error
 PUBLIC SETCLR
-SETCLR:
-    INT 3
+SETCLR proc near
+
+    push ax
+    push bx
+    push cx
+
+    ; Get number of parameters
+    mov cl, [bx]
+    inc bx
+
+    ; Parameter 1: foreground color
+    dec cl
+    js @error   ; error if no parameters
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_1
+        cmp ah, 31
+        ja @error
+        mov foreground_color, ah
+    @end_1:
+
+    ; Parameter 2: background color
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_2
+        cmp ah, 7
+        ja @error
+        mov background_color, ah
+    @end_2:
+
+    ; Parameter 3: border color
+    dec cl
+    js @exit
+    mov ax, [bx]
+    add bx, 2
+    or al, al
+    je @end_3
+        cmp ah, 15
+        ja @error
+        mov border_color, ah
+    @end_3:
+
+@exit:
+    call set_text_attr
+    mov bl, border_color
+    mov bh, 0
+    mov ah, 0Bh
+    int 10h
+
+    pop cx
+    pop bx
+    pop ax
+    clc
+    ret
+
+@error:
+    pop cx
+    pop bx
+    pop ax
+    stc
+    ret
+
+SETCLR endp
 
 ; Set screen width in columns
 ; On entry: AL = number of requested columns
 ; Returns C set if error
 PUBLIC SWIDTH
-SWIDTH:
-    INT 3
+SWIDTH proc near
+
+    cmp al, 80
+    jne @error
+    clc
+    ret
+
+@error:
+    stc
+    ret
+
+SWIDTH endp
 
 ; On entry: ES:DX = address to be checked
 ;           AL = byte to be POKEd
@@ -863,10 +1138,68 @@ SWIDTH:
 ; * POKEs to 0x0030-0x0031 call BASVAR, BX = 2
 ; * POKEs to 0x0358-0x0359 call BASVAR, BX = 3
 PUBLIC POKFLT
-POKFLT:
-    INT 3
+POKFLT proc near
 
-; On entry: ES:DX = address to be checked
+    ; If DEF SEG has been changed from the default, allow all POKEs
+    push bx
+    push dx
+    mov bx, es
+    cmp bx, BASIC_DS
+    jne @end_filter
+
+    cmp dx, 138
+    jne @F
+    cmp al, 0
+    jne @F
+        call KYBCLR  ; Clear the keyboard queue
+        jmp @filtered
+    @@:
+
+    cmp dx, 106
+    jne @F
+    cmp al, 0
+    jne @F
+        call SFTOFF  ; Turn off function key expansion
+        jmp @filtered
+    @@:
+
+    call basvar_index ; BX <- index to BASVAR variable
+    jc @no_filter
+        push cx
+        mov cl, al
+        ; Read the variable to AX
+        clc
+        call BASVAR
+        ; Change the low or the high byte
+        test dx, 1
+        jne @odd
+            mov al, cl
+        jmp @write
+        @odd:
+            mov ah, cl
+        @write:
+        ; Write the variable from AX
+        stc
+        call BASVAR
+        pop cx
+        
+    jmp @filtered
+    @no_filter:
+        ; No further filters
+        mov bx, 1
+        or bx, bx
+        jmp @end_filter
+
+@filtered:
+    xor bx, bx ; Set Z
+@end_filter:
+    pop dx
+    pop bx
+    ret
+
+POKFLT endp
+
+; On entry: ES:BX = address to be checked
 ; Returns: Z set if the PEEK was filtered. This is not an error; the PEEK will
 ; just not be done
 ;
@@ -879,15 +1212,109 @@ POKFLT:
 ; * PEEKs to 0x0030-0x0031 call BASVAR, BX = 2
 ; * PEEKs to 0x0358-0x0359 call BASVAR, BX = 3
 PUBLIC PEKFLT
-PEKFLT:
-    INT 3
+PEKFLT proc near
+
+    ; If DEF SEG has been changed from the default, allow all PEEKs
+    push bx
+    push dx
+    mov dx, bx
+    mov bx, es
+    cmp bx, BASIC_DS
+    jne @end_filter
+
+    cmp dx, 106
+    jne @F
+        xor al, al
+        call FKYSNS
+        sbb al, al  ; AL <- 0FFh if C set
+        jmp @filtered
+    @@:
+
+    cmp dx, 002Ch
+    jne @F
+        mov al, byte ptr TOPMEM+0
+        jmp @filtered
+    @@:
+
+    cmp dx, 002Dh
+    jne @F
+        mov al, byte ptr TOPMEM+1
+        jmp @filtered
+    @@:
+
+    call basvar_index ; BX <- index to BASVAR variable
+    jc @no_filter
+        ; Read the variable to AX
+        clc
+        call BASVAR
+        ; Return the low or the high byte
+        test dx, 1
+        je @F
+            mov al, ah
+        @@:
+        xor ah, ah
+        jmp @filtered
+    jmp @filtered
+    @no_filter:
+        ; No further filters
+        mov bx, 1
+        or bx, bx
+        jmp @end_filter
+
+@filtered:
+    xor bx, bx ; Set Z
+@end_filter:
+    pop dx
+    pop bx
+    ret
+
+PEKFLT endp
+
+; For POKFLT and PEKFLT: Find addresses that access variables controlled by
+; BASVAR and return the index in BX.
+; On entry: address to check in DX
+; Returns:  C set and DX unchanged if BASVAR does not control the address
+;           C clear and DX set to 0 for low byte, or 1 for high byte, if
+;               BASVAR controls the address
+basvar_index proc near private
+
+    push ax
+    mov bx, basvar_table_size - 2
+    @scan:
+        mov ax, dx               ; AX <- target address
+        sub ax, basvar_table[bx] ; AX <- offset from target address
+        cmp ax, 2                ; match if 0 or 1
+        jb @match
+    sub bx, 2
+    jnc @scan  ; until end of table
+    ; No match
+    pop ax
+    stc
+    ret
+
+    ; Match
+    @match:
+    mov dx, ax
+    pop ax
+    shr bx, 1
+    clc
+    ret
+
+basvar_table dw 002Eh
+             dw 0347h
+             dw 0030h
+             dw 0358h
+basvar_table_size = $ - basvar_table
+
+basvar_index endp
 
 ; Query foreground and background colors
 ; On entry: C set to get text colors, clear for graphics colors
 ; Returns: AX = foreground color
 ;          BX = background color
 PUBLIC GETFBC
-GETFBC:
+GETFBC proc near
+
     ; TODO: honor the C flag
     mov al, foreground_color
     mov ah, 0
@@ -895,15 +1322,46 @@ GETFBC:
     mov bh, 0
     ret
 
+GETFBC endp
+
 ; Set foreground and background colors
 ; On entry: AX = foreground color
 ;           BX = background color
 ; Returns: none
 PUBLIC SETFBC
-SETFBC:
+SETFBC proc near
+
     mov foreground_color, al
     mov background_color, bl
+    call set_text_attr
     ret
+
+SETFBC endp
+
+; On entry: foreground_color and background_color set
+; Returns: none in registers
+; Sets text_attr for use by text routines
+set_text_attr proc near private
+
+    push cx
+
+    mov ch, background_color ; CH =  x  x  x  x  x b2 b1 b0
+    and ch, 07h              ; CH =  0  0  0  0  0 b2 b1 b0
+    mov cl, 4
+    shl ch, cl               ; CH =  0 b2 b1 b0  0  0  0  0
+    mov cl, foreground_color
+    test cl, 10h             ; highlight bit
+    je @F
+        or ch, 80h           ; CH = f4 b2 b1 b0  0  0  0  0
+    @@:
+    and cl, 0Fh
+    or ch, cl                ; CH = f4 b2 b1 b0 f3 f2 f1 f0
+    mov text_attr, ch
+
+    pop cx
+    ret
+
+set_text_attr endp
 
 ; Return format for function key display
 ; Returns: BX points to a three byte structure
@@ -955,11 +1413,14 @@ FKYADV endp
 ; Returns: CX = maximum X coordinate
 ;          DX = maximum Y coordinate
 PUBLIC GRPSIZ
-GRPSIZ:
+GRPSIZ proc near
+
     ; TODO: For now, we support only 80x25 text mode, but GRPINI calls this
     mov cx,80*8 - 1
     mov dx,25*8 - 1
     ret
+
+GRPSIZ endp
 
 ; Set a cursor position retrieved from FETCHC
 ; On entry: AL:BX = cursor position
@@ -1025,11 +1486,14 @@ MAPXYC:
 ; On entry: AL = attribute
 ; Returns:  none
 PUBLIC SETATR
-SETATR:
+SETATR proc near
+
     ; TODO: Graphics modes are not yet supported. For 16 color EGA and VGA
     ; modes, set the hardware registers here.
     mov graph_attr, al
     ret
+
+SETATR endp
 
 ; Read pixel at current position
 ; Returns: AL = pixel attribute
@@ -1153,9 +1617,12 @@ SCANL:
 ;               DX = duration in 1/18.2 second clock ticks
 ; Returns: C set on error
 PUBLIC DONOTE
-DONOTE:
+DONOTE proc near
+
     ; TODO: The speaker is not yet implemented, but SNDRST calls this
     ret
+
+DONOTE endp
 
 ;-----------------------------------------------------------------------------
 ; Support for COMx ports
@@ -1384,21 +1851,32 @@ CSEG ENDS
 
 DSEG segment public 'DATASG'
 
+extrn TOPMEM:word
+
+; Blink state saved at init, to restore on exit
+blink_flag db ?
+
 ; Function key format returned by FKYFMT
 fkey_format db 3 dup (?)
 
 ; Shape of text cursor set by CSRDSP
 cursor_shape dw 0B0Dh ; Initially in overwrite mode
 
-; Colors set by SETFBC and returned by GETFBC
+; Colors set by SETFBC and SETCLR and returned by GETFBC
 foreground_color db 7
 background_color db 0
+border_color db 0
+text_attr db 07h
 
 ; Color set by SETATR
 graph_attr db 0
 
 ; Maximum line for SCROLL
 max_line db 0
+
+; Active page (where we draw) and visible page (what we see)
+active_page db 0
+visible_page db 0
 
 DSEG ends
 
