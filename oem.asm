@@ -1154,8 +1154,8 @@ SWIDTH proc near
             mov cl, 25
             call SCNSWI
             pop cx
-            call CLRSCN
             call GRPINI
+            call SCNCLR
             clc
     @@:
     ret
