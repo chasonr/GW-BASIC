@@ -1198,12 +1198,11 @@ FKYFMT proc near
 
 FKYFMT endp
 
-; Unclear what this does. It seems to depend on Z set or clear and have
-; to do with display of function keys.
-; It sets internal variables giving the first key displayed and the number
-; of lines not displaying function keys. Z is set if function keys are
-; not displayed.
+; Advance to the next display format for function keys in response to
+; control-T.
+; On entry: Z clear if function keys are currently displayed
 ; Returns:  Z clear if function keys are to be displayed
+;           First key to display is updated if necessary
 public FKYADV
 FKYADV proc near
 
@@ -1810,28 +1809,45 @@ generic_FKYFMT proc near private
     mov bx, offset fkey_format
     mov byte ptr 0[bx], 6
     mov byte ptr 1[bx], 10
-    mov byte ptr 2[bx], 1
+    cmp 2[bx], 0
+    jne @F
+        mov byte ptr 2[bx], 1
+    @@:
     ret
 
 generic_FKYFMT endp
 
-; Unclear what this does. It seems to depend on Z set or clear and have
-; to do with display of function keys.
-; It sets internal variables giving the first key displayed and the number
-; of lines not displaying function keys. Z is set if function keys are
-; not displayed.
+; Advance to the next display format for function keys in response to
+; control-T.
+; On entry: Z clear if function keys are currently displayed
 ; Returns:  Z clear if function keys are to be displayed
+;           First key to display is updated if necessary
 generic_FKYADV proc near private
 
-    ; TODO: handle 40 column display
     push ax
-    jnz @keys_off
+    jnz @keys_are_on
+        ; Function keys are currently off
+        ; Turn them on and set the first one displayed to 1
         mov max_line, 23
+        mov fkey_format+2, 1
         mov ax, 1
         jmp @end
-    @keys_off:
-        mov max_line, 24
-        mov ax, 0
+    @keys_are_on:
+        ; Function keys are currently on
+        mov al, fkey_format+2 ; First key displayed
+        add al, 5             ; If 40 columns, advance five keys
+        cmp text_width, 40
+        jbe @F
+            add al, 5         ; If 80 columns, turn keys off
+        @@:
+        cmp al, 10
+        jbe @keys_on
+            ; Turn keys off
+            mov fkey_format+2, 1
+            xor ax, ax
+            jmp @end
+        @keys_on:
+            mov fkey_format+2, al
     @end:
     or ax, ax
     pop ax
