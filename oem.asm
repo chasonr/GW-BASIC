@@ -122,6 +122,25 @@ GWTERM proc near
     mov ax, 1003h
     int 10h
 
+    ; Return to 80 column text mode
+    mov ah, 0Fh     ; Do this if not already 80 column text
+    int 10h
+    cmp al, 02h
+    je @end_video
+    cmp al, 03h
+    je @end_video
+    cmp al, 07h
+    je @end_video
+        mov ax, 0003h   ; CGA 80 column mode
+        int 10h
+        mov ah, 0Fh
+        int 10h
+        cmp al, 03h     ; Did it work?
+        je @end_video
+            mov ax, 0007h ; Monochrome 80 column mode
+            int 10h
+    @end_video:
+
     pop cx
     pop bx
     pop ax
@@ -830,7 +849,7 @@ screen_mode_1 label word
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw generic_SCROLL         ; SCROLL_handler
-    dw generic_CLRSCN         ; CLRSCN_handler
+    dw cga_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
     dw generic_CSRDSP         ; CSRDSP_handler
@@ -1769,6 +1788,7 @@ generic_CLRSCN proc near private
         int 10h
 
         call SCNCLR
+        call GRPINI
 
         pop dx
         pop cx
@@ -2399,6 +2419,55 @@ mode_1_SCRSTT_color proc near private
     ret
 
 mode_1_SCRSTT_color endp
+
+; Clear the screen or the text window
+; On entry: If the CLS statement has a parameter, C is set and the parameter
+;           is in AL.
+;           Otherwise, C is clear and AL is 0.
+; Returns:  C clear if screen cleared
+;           SCNCLR and GRPINI called
+; Modes 1 and 2 both use this
+cga_CLRSCN proc near
+
+    cmp al, 0
+    stc
+    jne @end
+
+        push ax
+        push cx
+        push dx
+        push es
+
+        cld
+        mov al, max_line
+        inc al
+        xor ah, ah
+        mov dx, 40*4 ; 40 words per raster line, 4 lines per text row
+        mul dx
+        mov dx, ax
+        mov es, video_seg
+        xor di, di
+        xor ax, ax
+        mov cx, dx
+        rep stosw   ; clear the even lines
+        mov di, 2000h
+        mov cx, dx
+        rep stosw   ; clear the odd lines
+
+        call SCNCLR
+        call GRPINI
+
+        pop es
+        pop dx
+        pop cx
+        pop ax
+
+        clc
+
+    @end:
+    ret
+
+cga_CLRSCN endp
 
 ; Set up configured colors
 ; On entry: foreground_color, background_color and border_color updated
