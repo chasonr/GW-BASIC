@@ -768,6 +768,7 @@ Screen_Mode ends
 ; Table of supported screen modes
 mode_table label word
     dw offset screen_mode_0
+    dw offset screen_mode_1
 mode_table_size = ($ - mode_table)/2
 
 ; JWASM complains that the literal is too long if I try to use a structure.
@@ -821,6 +822,55 @@ screen_mode_0 label word
     dw 400                    ; y_res
     db 8                      ; num_pages
 
+screen_mode_1 label word
+    dw mode_1_SCRSTT_init     ; SCRSTT_init
+    dw mode_1_SCRSTT_color    ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw generic_SCROUT         ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw generic_SCROLL         ; SCROLL_handler
+    dw generic_CLRSCN         ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw generic_CSRDSP         ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw mode_1_SETCLR          ; SETCLR_handler
+    dw mode_1_SWIDTH          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw mode_1_SETFBC          ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw graphics_stub          ; GRPSIZ_handler
+    dw graphics_stub          ; STOREC_handler
+    dw graphics_stub          ; FETCHC_handler
+    dw graphics_stub          ; UPC_handler
+    dw graphics_stub          ; DOWNC_handler
+    dw graphics_stub          ; LEFTC_handler
+    dw graphics_stub          ; RIGHTC_handler
+    dw graphics_stub          ; SCALXY_handler
+    dw graphics_stub          ; MAPXYC_handler
+    dw graphics_stub          ; SETATR_handler
+    dw graphics_stub          ; READC_handler
+    dw graphics_stub          ; SETC_handler
+    dw graphics_stub          ; NSETCX_handler
+    dw graphics_stub          ; GTASPC_handler
+    dw graphics_stub          ; PIXSIZ_handler
+    dw graphics_stub          ; PGINIT_handler
+    dw graphics_stub          ; NREAD_handler
+    dw graphics_stub          ; NWRITE_handler
+    dw graphics_stub          ; PNTINI_handler
+    dw graphics_stub          ; TDOWNC_handler
+    dw graphics_stub          ; TUPC_handler
+    dw graphics_stub          ; SCANR_handler
+    dw graphics_stub          ; SCANL_handler
+    db 40                     ; text_columns
+    db 25                     ; text_rows
+    dw 320                    ; x_res
+    dw 200                    ; y_res
+    db 2                      ; num_pages
+
 ; Most functions will use this macro to select the correct handler
 dispatch macro handler
 
@@ -868,6 +918,7 @@ SCRSTT proc near
         mov al, ah
         xor ah, ah
         mov di, ax
+        shl di, 1
         mov di, mode_table[di]
         or di, di
         jz @error               ; or if mode_table has 0
@@ -875,6 +926,11 @@ SCRSTT proc near
         call cs:Screen_Mode.SCRSTT_init[di]
         jc @error
         mov mode_ptr, di
+        mov  al,text_width
+        mov  cl,25
+        call SCNSWI
+        call GRPINI
+        call SCNCLR
     @end_1:
 
     ; Parameter 2: color flag
@@ -1083,8 +1139,6 @@ SETCLR proc near
     add bx, 2
     or al, al
     je @end_1
-        cmp ah, 31
-        ja @error
         mov foreground_color, ah
     @end_1:
 
@@ -1095,8 +1149,6 @@ SETCLR proc near
     add bx, 2
     or al, al
     je @end_2
-        cmp ah, 7
-        ja @error
         mov background_color, ah
     @end_2:
 
@@ -1107,8 +1159,6 @@ SETCLR proc near
     add bx, 2
     or al, al
     je @end_3
-        cmp ah, 15
-        ja @error
         mov border_color, ah
     @end_3:
 
@@ -1138,25 +1188,21 @@ SETCLR endp
 public SWIDTH
 SWIDTH proc near
 
-    ; Dispatch only if the width changes, and update the width
-    cmp al, text_width
-    clc
-    je @F
-        push ax
-        push di
-        mov di, mode_ptr
-        call cs:Screen_Mode.SWIDTH_handler[di]
-        pop di
-        pop ax
-        jc @F
-            mov text_width, al
-            push cx
-            mov cl, 25
-            call SCNSWI
-            pop cx
-            call GRPINI
-            call SCNCLR
-            clc
+    push ax
+    push di
+    mov di, mode_ptr
+    call cs:Screen_Mode.SWIDTH_handler[di]
+    pop di
+    pop ax
+    jc @F
+        mov text_width, al
+        push cx
+        mov cl, 25
+        call SCNSWI
+        pop cx
+        call GRPINI
+        call SCNCLR
+        clc
     @@:
     ret
 
@@ -1314,8 +1360,6 @@ MAPXYC endp
 public SETATR
 SETATR proc near
 
-    ; TODO: Graphics modes are not yet supported. For 16 color EGA and VGA
-    ; modes, set the hardware registers here.
     mov graph_attr, al
     dispatch SETATR_handler
 
@@ -1552,6 +1596,40 @@ generic_SCROUT proc near private
     ret
 
 generic_SCROUT endp
+
+; Read a character from the screen
+; On entry:
+;     C set if screen editor is calling
+;     DH = column (1 left)
+;     DL = row (1 top)
+; Returns C clear for success
+;     AL = character; AH = 0
+; Only the screen editor checks the C flag
+generic_SCRINP proc near private
+
+    push bx
+    push dx
+
+    call convert_cursor ; to 0-based (row, column)
+    call set_cursor
+
+    mov bh, active_page ; read character at cursor position
+    mov ah, 08h
+    int 10h
+    xor ah, ah
+
+    ; Return null character as space
+    or al, al
+    jne @F
+        mov al, ' '
+    @@:
+
+    pop dx
+    pop bx
+    clc
+    ret
+
+generic_SCRINP endp
 
 ; Scroll window beginning at column AH, row AL,
 ; extending through CH columns and CL rows,
@@ -1805,11 +1883,10 @@ generic_GETFBC endp
 ;          byte 2: number of first function key
 generic_FKYFMT proc near private
 
-    ; Stub: fixed format for 80 column display
     mov bx, offset fkey_format
     mov byte ptr 0[bx], 6
     mov byte ptr 1[bx], 10
-    cmp 2[bx], 0
+    cmp byte ptr 2[bx], 0
     jne @F
         mov byte ptr 2[bx], 1
     @@:
@@ -1870,11 +1947,11 @@ set_cursor proc near private
 
     cmp dh, 25
     jae @F
-    cmp dl, 80
+    cmp dl, text_width
     jae @F
         push ax
         push bx
-        mov bh, 0
+        mov bh, active_page
         mov ah, 02h
         int 10h
         pop bx
@@ -1999,7 +2076,6 @@ mode_0_SCROUT endp
 ; Only the screen editor checks the C flag
 mode_0_SCRINP proc near private
 
-    ; TODO: support graphics modes
     push di
     push es
     call mode_0_xy_to_address
@@ -2019,7 +2095,6 @@ mode_0_SCRINP endp
 ; Returns:  BL = attribute; BH = 0
 mode_0_SCRATR proc near private
 
-    ; TODO: support graphics modes
     push di
     push es
     push dx
@@ -2045,6 +2120,7 @@ mode_0_SETCLR proc near private
     mov bh, 0
     mov ah, 0Bh
     int 10h
+    clc
     ret
 
 mode_0_SETCLR endp
@@ -2111,8 +2187,12 @@ mode_0_SETFBC endp
 ;          DX = maximum Y coordinate
 mode_0_GRPSIZ proc near private
 
-    ; TODO: For now, we support only 80x25 text mode, but GRPINI calls this
-    mov cx,80*8 - 1
+    mov dl,text_width
+    xor dh, dh
+    mov cl, 3
+    shl dx, cl
+    dec cx
+    mov cx, dx
     mov dx,25*8 - 1
     ret
 
@@ -2175,7 +2255,7 @@ mode_0_set_text_attr proc near private
     mov cl, 4
     shl ch, cl               ; CH =  0 b2 b1 b0  0  0  0  0
     mov cl, foreground_color
-    test cl, 10h             ; highlight bit
+    test cl, 10h             ; highlight/blink bit
     je @F
         or ch, 80h           ; CH = f4 b2 b1 b0  0  0  0  0
     @@:
@@ -2191,6 +2271,33 @@ mode_0_set_text_attr endp
 ;-----------------------------------------------------------------------------
 ; Screen mode 1: CGA 320x200, 4 colors
 ;-----------------------------------------------------------------------------
+
+; Set up mode 1
+mode_1_SCRSTT_init proc near private
+
+    ; Set BIOS mode 5
+    mov ax, 0005h
+    int 10h
+
+    ; Did it work?
+    push bx
+    mov ah, 0Fh
+    int 10h
+    pop bx
+    cmp al, 5
+    jne @error
+
+    ; We're good.
+    mov text_width, 40
+    clc
+    ret
+
+    ; Oops.
+    @error:
+    stc
+    ret
+
+mode_1_SCRSTT_init endp
 
 ; Color flag for mode 1
 ; On entry: AX = color flag (SCREEN parameter 2)
@@ -2219,6 +2326,48 @@ mode_1_SCRSTT_color proc near private
     ret
 
 mode_1_SCRSTT_color endp
+
+; Set up configured colors
+; On entry: foreground_color, background_color and border_color updated
+mode_1_SETCLR proc near private
+
+    ; Mode 1 uses foreground_color as background color and background_color
+    ; to select between two possible palettes.
+    mov bl, foreground_color ; COLOR parameter 1
+    and bl, 0Fh
+    mov bh, 0
+    mov ah, 0Bh
+    int 10h
+    mov bl, background_color ; COLOR parameter 2
+    and bl, 01h
+    mov bh, 1
+    mov ah, 0Bh
+    int 10h
+    clc
+    ret
+
+mode_1_SETCLR endp
+
+; Set screen width in columns
+; On entry: AL = number of requested columns
+; Returns C set if error
+mode_1_SWIDTH proc near private
+
+    ; TODO: this will switch to mode 2, but first we need mode 2 implemented
+    stc
+    ret
+
+mode_1_SWIDTH endp
+
+; Set foreground and background colors
+; On entry: foreground_color and background_color set
+; Returns: none
+mode_1_SETFBC proc near private
+
+    call mode_0_set_text_attr
+    ret
+
+mode_1_SETFBC endp
 
 ;-----------------------------------------------------------------------------
 ; Speaker support
