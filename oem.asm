@@ -1398,7 +1398,7 @@ MAPXYC endp
 
 ; Set the pixel attribute to be drawn
 ; On entry: AL = attribute
-; Returns:  none
+; Returns:  C set if error
 public SETATR
 SETATR proc near
 
@@ -1454,7 +1454,10 @@ GTASPC endp
 public PIXSIZ
 PIXSIZ proc near
 
+    push di
+    mov di, mode_ptr
     mov al, cs:Screen_Mode.pixel_size[di]
+    pop di
     ret
 
 PIXSIZ endp
@@ -2619,7 +2622,7 @@ mode_1_MAPXYC endp
 
 ; Set the pixel attribute to be drawn
 ; On entry: AL = attribute
-; Returns:  none
+; Returns:  C set if error
 mode_1_SETATR proc near private
 
     ; Duplicate lower two bits through the entire byte
@@ -2629,6 +2632,7 @@ mode_1_SETATR proc near private
     mov al, bit_dup[bx]
     pop bx
     mov graph_attr, al
+    clc
     ret
 
 bit_dup db 00h, 55h, 0AAh, 0FFh
@@ -2699,9 +2703,114 @@ cga_SETC proc near private
 
 cga_SETC endp
 
-public mode_1_NSETCX
-mode_1_NSETCX:
-    int 3
+; Write multiple pixels starting at current position and proceeding right
+; On entry: BX = pixel count
+; Returns:  none
+mode_1_NSETCX proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    cld
+
+    ; Start and end of draw
+    mov dx, x_coordinate
+    add bx, dx
+    cmp bx, 320
+    jb @F
+        mov bx, 320
+    @@:
+    dec bx
+
+    ; Does the draw cross a byte boundary?
+    mov ax, bx
+    xor ax, dx
+    and ax, 0FFFCh
+    jnz @multibyte
+
+        ; Draw lies within a single byte
+        mov si, dx
+        and si, 03h
+        mov cl, left_mask_2[si]
+        mov si, bx
+        and si, 03h
+        and cl, right_mask_2[si] ; CL has 1 where bits will be replaced
+        les di, video_addr
+        mov ah, es:[di]        ; AL <- existing byte
+        mov al, graph_attr
+        ; where CL has 0: AL <- AH
+        ; where CL has 1: AL <- AL
+        xor al, ah
+        and al, cl
+        xor al, ah
+        stosb
+
+    jmp @end
+    @multibyte:
+
+        ; Draw spans two or more bytes
+        ; Draw the first byte
+        mov ch, graph_attr
+        les di, video_addr
+        mov si, dx
+        and si, 03h
+        mov cl, left_mask_2[si]
+        mov ah, es:[di]        ; AL <- existing byte
+        mov al, ch
+        ; where CL has 0: AL <- AH
+        ; where CL has 1: AL <- AL
+        xor al, ah
+        and al, cl
+        xor al, ah
+        stosb
+
+        ; Draw zero or more whole bytes
+        mov si, bx      ; Save right partial byte for the end
+        and si, 03h
+        mov cl, 2
+        shr bx, cl
+        shr dx, cl
+        sub bx, dx
+        dec bx
+        je @end_whole
+            mov al, ch  ; AL <- graph_attr
+            mov cx, bx
+            rep stosb
+            mov ch, al  ; CH <- graph_attr
+        @end_whole:
+
+        ; Draw the last byte
+        mov cl, right_mask_2[si]
+        mov ah, es:[di]        ; AH <- existing byte
+        mov al, ch
+        ; where CL has 0: AL <- AH
+        ; where CL has 1: AL <- AL
+        xor al, ah
+        and al, cl
+        xor al, ah
+        stosb
+
+    @end:
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+left_mask_2 db 0FFh, 03Fh, 0Fh, 03h
+right_mask_2 db 0C0h, 0F0h, 0FCh, 0FFh
+
+mode_1_NSETCX endp
+
 public mode_1_PGINIT
 mode_1_PGINIT:
     int 3
