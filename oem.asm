@@ -740,14 +740,11 @@ Screen_Mode struc
     DOWNC_handler  dw ?
     LEFTC_handler  dw ?
     RIGHTC_handler dw ?
-    SCALXY_handler dw ?
     MAPXYC_handler dw ?
     SETATR_handler dw ?
     READC_handler  dw ?
     SETC_handler   dw ?
     NSETCX_handler dw ?
-    GTASPC_handler dw ?
-    PIXSIZ_handler dw ?
     PGINIT_handler dw ?
     NREAD_handler  dw ?
     NWRITE_handler dw ?
@@ -762,7 +759,10 @@ Screen_Mode struc
     text_rows      db ? ; Text rows
     x_res          dw ? ; X pixel resolution
     y_res          dw ? ; Y pixel resolution
+    width_height   dw ? ; Pixel width over pixel height as 8.8 fixed
+    height_width   dw ? ; Pixel height over pixel width as 8.8 fixed
     num_pages      db ? ; Number of supported pages
+    pixel_size     db ? ; Number of bits per pixel
 Screen_Mode ends
 
 ; Table of supported screen modes
@@ -800,14 +800,11 @@ screen_mode_0 label word
     dw graphics_stub          ; DOWNC_handler
     dw graphics_stub          ; LEFTC_handler
     dw graphics_stub          ; RIGHTC_handler
-    dw graphics_stub          ; SCALXY_handler
     dw graphics_stub          ; MAPXYC_handler
     dw graphics_stub          ; SETATR_handler
     dw graphics_stub          ; READC_handler
     dw graphics_stub          ; SETC_handler
     dw graphics_stub          ; NSETCX_handler
-    dw graphics_stub          ; GTASPC_handler
-    dw graphics_stub          ; PIXSIZ_handler
     dw graphics_stub          ; PGINIT_handler
     dw graphics_stub          ; NREAD_handler
     dw graphics_stub          ; NWRITE_handler
@@ -820,7 +817,10 @@ screen_mode_0 label word
     db 25                     ; text_rows
     dw 640                    ; x_res
     dw 400                    ; y_res
+    dw 0100h                  ; width_height
+    dw 0100h                  ; height_width
     db 8                      ; num_pages
+    db 0                      ; pixel_size
 
 screen_mode_1 label word
     dw mode_1_SCRSTT_init     ; SCRSTT_init
@@ -842,34 +842,34 @@ screen_mode_1 label word
     dw mode_1_SETFBC          ; SETFBC_handler
     dw generic_FKYFMT         ; FKYFMT_handler
     dw generic_FKYADV         ; FKYADV_handler
-    dw graphics_stub          ; GRPSIZ_handler
-    dw graphics_stub          ; STOREC_handler
-    dw graphics_stub          ; FETCHC_handler
-    dw graphics_stub          ; UPC_handler
-    dw graphics_stub          ; DOWNC_handler
-    dw graphics_stub          ; LEFTC_handler
-    dw graphics_stub          ; RIGHTC_handler
-    dw graphics_stub          ; SCALXY_handler
-    dw graphics_stub          ; MAPXYC_handler
-    dw graphics_stub          ; SETATR_handler
-    dw graphics_stub          ; READC_handler
-    dw graphics_stub          ; SETC_handler
-    dw graphics_stub          ; NSETCX_handler
-    dw graphics_stub          ; GTASPC_handler
-    dw graphics_stub          ; PIXSIZ_handler
-    dw graphics_stub          ; PGINIT_handler
-    dw graphics_stub          ; NREAD_handler
-    dw graphics_stub          ; NWRITE_handler
-    dw graphics_stub          ; PNTINI_handler
-    dw graphics_stub          ; TDOWNC_handler
-    dw graphics_stub          ; TUPC_handler
-    dw graphics_stub          ; SCANR_handler
-    dw graphics_stub          ; SCANL_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw mode_1_STOREC          ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw cga_UPC                ; UPC_handler
+    dw cga_DOWNC              ; DOWNC_handler
+    dw mode_1_LEFTC           ; LEFTC_handler
+    dw mode_1_RIGHTC          ; RIGHTC_handler
+    dw mode_1_MAPXYC          ; MAPXYC_handler
+    dw mode_1_SETATR          ; SETATR_handler
+    dw mode_1_READC           ; READC_handler
+    dw cga_SETC               ; SETC_handler
+    dw mode_1_NSETCX          ; NSETCX_handler
+    dw mode_1_PGINIT          ; PGINIT_handler
+    dw mode_1_NREAD           ; NREAD_handler
+    dw mode_1_NWRITE          ; NWRITE_handler
+    dw mode_1_PNTINI          ; PNTINI_handler
+    dw mode_1_TDOWNC          ; TDOWNC_handler
+    dw mode_1_TUPC            ; TUPC_handler
+    dw mode_1_SCANR           ; SCANR_handler
+    dw mode_1_SCANL           ; SCANL_handler
     db 40                     ; text_columns
     db 25                     ; text_rows
     dw 320                    ; x_res
     dw 200                    ; y_res
-    db 2                      ; num_pages
+    dw 00D5h                  ; width_height (0.833)
+    dw 0133h                  ; height_width (1.200)
+    db 1                      ; num_pages
+    db 2                      ; pixel_size
 
 ; Most functions will use this macro to select the correct handler
 dispatch macro handler
@@ -1339,13 +1339,55 @@ RIGHTC endp
 public SCALXY
 SCALXY proc near
 
-    dispatch SCALXY_handler
+    push ax
+    push di
+    mov di, mode_ptr
+    mov al, 1
+
+    ; Left boundary
+    or cx, cx
+    jns @F
+        ; CX < 0
+        xor cx, cx
+        xor ax, ax
+    @@:
+
+    ; Right boundary
+    cmp cx, cs:Screen_Mode.x_res[di]
+    jl @F
+        ; CX >= x_res
+        mov cx, cs:Screen_Mode.x_res[di]
+        dec cx
+        xor ax, ax
+    @@:
+
+    ; Top boundary
+    or dx, dx
+    jns @F
+        ; DX < 0
+        xor dx, dx
+        xor ax, ax
+    @@:
+
+    ; Bottom boundary
+    cmp dx, cs:Screen_Mode.y_res[di]
+    jl @F
+        ; DX >= y_res
+        mov dx, cs:Screen_Mode.y_res[di]
+        dec dx
+        xor ax, ax
+    @@:
+
+    shr al, 1 ; clear C if any bound exceeded
+    pop di
+    pop ax
+    ret
 
 SCALXY endp
 
 ; Map pixel coordinates to a cursor position as returned by FETCHC
 ; On entry: CX = X coordinate
-;           CY = Y coordinate
+;           DX = Y coordinate
 ; Returns: none
 public MAPXYC
 MAPXYC proc near
@@ -1360,7 +1402,6 @@ MAPXYC endp
 public SETATR
 SETATR proc near
 
-    mov graph_attr, al
     dispatch SETATR_handler
 
 SETATR endp
@@ -1399,7 +1440,12 @@ NSETCX endp
 public GTASPC
 GTASPC proc near
 
-    dispatch GTASPC_handler
+    push di
+    mov di, mode_ptr
+    mov bx, cs:Screen_Mode.width_height[di]
+    mov dx, cs:Screen_Mode.height_width[di]
+    pop di
+    ret
 
 GTASPC endp
 
@@ -1408,7 +1454,8 @@ GTASPC endp
 public PIXSIZ
 PIXSIZ proc near
 
-    dispatch PIXSIZ_handler
+    mov al, cs:Screen_Mode.pixel_size[di]
+    ret
 
 PIXSIZ endp
 
@@ -1932,6 +1979,29 @@ generic_FKYADV proc near private
 
 generic_FKYADV endp
 
+; Return size of graphics screen
+; Returns: CX = maximum X coordinate
+;          DX = maximum Y coordinate
+generic_GRPSIZ proc near private
+
+    mov cx, cs:Screen_Mode.x_res[di]
+    dec cx
+    mov dx, cs:Screen_Mode.y_res[di]
+    dec dx
+    ret
+
+generic_GRPSIZ endp
+
+; Retrieve the cursor position to be saved by STOREC
+; Returns: AL:BX = cursor position
+generic_FETCHC proc near private
+
+    mov bx, video_pos
+    mov al, video_bitmask
+    ret
+
+generic_FETCHC endp
+
 ; Convert 1-based (column, row) to 0-based (row, column)
 convert_cursor proc near private
 
@@ -2369,6 +2439,294 @@ mode_1_SETFBC proc near private
 
 mode_1_SETFBC endp
 
+; Set a cursor position retrieved from FETCHC
+; On entry: AL:BX = cursor position
+; Returns:  none
+mode_1_STOREC proc near private
+
+    push ax
+    push dx
+
+    mov video_pos, bx
+    mov video_bitmask, al
+
+    ; Recover the X coordinate
+    mov ax, bx
+    and ax, 1FFFh ; exclude the odd-line bit
+    mov dl, 80
+    div dl        ; AH <- byte offset within line
+    mov dl, ah    ; to 16 bit in DX
+    xor dh, dh
+    shl dx, 1     ; convert to pixel coordinate
+    shl dx, 1
+    mov al, video_bitmask
+    test al, 0Fh  ; get the lower two bits
+    je @F
+        or dx, 2
+    @@:
+    test al, 33h
+    je @F
+        or dx, 1
+    @@:
+
+    mov x_coordinate, dx
+
+    pop dx
+    pop ax
+    ret
+
+mode_1_STOREC endp
+
+; Move one pixel up
+; On entry: none
+; Returns   none
+; Modes 1 and 2 both use this
+cga_UPC proc near private
+
+    push ax
+
+    mov ax, video_pos
+    sub ax, 2000h
+    jnc @F
+        add ax, 4000h - 80
+    @@:
+    mov video_pos, ax
+
+    pop ax
+    ret
+
+cga_UPC endp
+
+; Move one pixel down
+; On entry: none
+; Returns   none
+; Modes 1 and 2 both use this
+cga_DOWNC proc near private
+
+    push ax
+
+    mov ax, video_pos
+    add ax, 2000h
+    cmp ax, 4000h
+    jb @F
+        sub ax, 4000h - 80
+    @@:
+    mov video_pos, ax
+
+    pop ax
+    ret
+
+cga_DOWNC endp
+
+; Move one pixel left
+; On entry: none
+; Returns   none
+mode_1_LEFTC proc near private
+
+    push ax
+
+    dec x_coordinate
+
+    ; Shift the bit mask left
+    mov al, video_bitmask
+    rol al, 1
+    rol al, 1
+    mov video_bitmask, al
+
+    ; Carry into the address
+    jnc @F
+        dec video_pos
+    @@:
+
+    pop ax
+    ret
+
+mode_1_LEFTC endp
+
+; Move one pixel right
+; On entry: none
+; Returns   none
+mode_1_RIGHTC proc near private
+
+    push ax
+
+    inc x_coordinate
+
+    ; Shift the bit mask right
+    mov al, video_bitmask
+    ror al, 1
+    ror al, 1
+    mov video_bitmask, al
+
+    ; Carry into the address
+    jnc @F
+        inc video_pos
+    @@:
+
+    pop ax
+    ret
+
+mode_1_RIGHTC endp
+
+; Map pixel coordinates to a cursor position as returned by FETCHC
+; On entry: CX = X coordinate
+;           DX = Y coordinate
+; Returns: none
+mode_1_MAPXYC proc near private
+
+    push ax
+    push bx
+    push cx
+    push di
+
+    mov x_coordinate, cx
+
+    ; Bit 1 of the Y coordinate goes to bit 13 of the address
+    xor di, di
+    shr dl, 1
+    rcr di, 1
+    shr di, 1
+    shr di, 1
+
+    ; Rest of the Y coordinate times 80
+    mov al, 80
+    mul dl
+    add di, ax
+
+    ; X coordinate divided by 4
+    mov ax, cx
+    shr ax, 1
+    shr ax, 1
+    add di, ax
+
+    ; Bit mask from X mod 4
+    and cl, 03h
+    shl cl, 1
+    mov al, 0C0h
+    shr al, cl
+
+    ; Save the graphics cursor position
+    mov video_pos, di
+    mov video_bitmask, al
+
+    pop di
+    pop dx
+    pop cx
+    pop ax
+    ret
+
+mode_1_MAPXYC endp
+
+; Set the pixel attribute to be drawn
+; On entry: AL = attribute
+; Returns:  none
+mode_1_SETATR proc near private
+
+    ; Duplicate lower two bits through the entire byte
+    push bx
+    and ax, 03h
+    mov bx, ax
+    mov al, bit_dup[bx]
+    pop bx
+    mov graph_attr, al
+    ret
+
+bit_dup db 00h, 55h, 0AAh, 0FFh
+
+mode_1_SETATR endp
+
+; Read pixel at current position
+; Returns: AL = pixel attribute
+mode_1_READC proc near private
+
+    push bx
+    push cx
+    push es
+
+    ; Address in frame buffer
+    les bx, video_addr
+
+    ; Current pixels
+    mov al, es:[bx]
+
+    ; Shift count
+    mov cx, x_coordinate
+    and cl, 03h ; 0 1 2 3
+    xor cl, 03h ; 3 2 1 0
+    shl cl, 1   ; 6 4 2 0
+
+    ; Shift the bits into place
+    shr al, cl
+    and al, 03h
+
+    pop es
+    pop cx
+    pop bx
+    ret
+
+mode_1_READC endp
+
+; Write pixel at current location, using current attribute
+; Returns: none
+; Modes 1 and 2 both use this
+cga_SETC proc near private
+
+    push ax
+    push bx
+    push es
+
+    ; Address in frame buffer
+    les bx, video_addr
+
+    ; Current pixels
+    mov al, es:[bx]
+
+    ; Pixel to substitute
+    mov ah, graph_attr
+
+    ; Replace the pixel at video_bitmask
+    xor ah, al
+    and ah, video_bitmask
+    xor ah, al
+
+    ; Update pixels
+    mov es:[bx], ah
+
+    pop es
+    pop bx
+    pop ax
+    ret
+
+cga_SETC endp
+
+public mode_1_NSETCX
+mode_1_NSETCX:
+    int 3
+public mode_1_PGINIT
+mode_1_PGINIT:
+    int 3
+public mode_1_NREAD
+mode_1_NREAD:
+    int 3
+public mode_1_NWRITE
+mode_1_NWRITE:
+    int 3
+public mode_1_PNTINI
+mode_1_PNTINI:
+    int 3
+public mode_1_TDOWNC
+mode_1_TDOWNC:
+    int 3
+public mode_1_TUPC
+mode_1_TUPC:
+    int 3
+public mode_1_SCANR
+mode_1_SCANR:
+    int 3
+public mode_1_SCANL
+mode_1_SCANL:
+    int 3
+
 ;-----------------------------------------------------------------------------
 ; Speaker support
 ;-----------------------------------------------------------------------------
@@ -2627,8 +2985,19 @@ fkey_format db 3 dup (?)
 ; Pointer to screen mode structure
 mode_ptr dw ?
 
+; Keep video_addr, video_pos and video_seg together
+; Label so we can use LES to load the graphics position
+video_addr label dword
+; Offset from frame buffer to graphics position
+video_pos dw ?
 ; Segment of video frame buffer
 video_seg dw ?
+
+; Bit mask of current graphics position
+video_bitmask db ?
+
+; X coordinate for certain graphics routines
+x_coordinate dw ?
 
 ; Width of text screen in columns
 text_width db ?
