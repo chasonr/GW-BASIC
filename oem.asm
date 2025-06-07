@@ -877,8 +877,8 @@ screen_mode_1 label word
     dw mode_1_NREAD           ; NREAD_handler
     dw mode_1_NWRITE          ; NWRITE_handler
     dw mode_1_PNTINI          ; PNTINI_handler
-    dw mode_1_TDOWNC          ; TDOWNC_handler
-    dw mode_1_TUPC            ; TUPC_handler
+    dw cga_TDOWNC             ; TDOWNC_handler
+    dw cga_TUPC               ; TUPC_handler
     dw mode_1_SCANR           ; SCANR_handler
     dw mode_1_SCANL           ; SCANL_handler
     db 40                     ; text_columns
@@ -1525,8 +1525,8 @@ NWRITE endp
 ; Support for the PAINT statement
 ;-----------------------------------------------------------------------------
 ; Set up flood fill algorithm
-; On entry: AL = boundary attribute
-; Returns: none
+; On entry: AL = border attribute
+; Returns: C set if error
 public PNTINI
 PNTINI proc near
 
@@ -1557,13 +1557,15 @@ TUPC proc near
 TUPC endp
 
 ; On entry: Setup done with PNTINI
-;           DX = number of boundary pixels to skip right
-;           No pixels are painted if this many pixels in the boundary color
+;           DX = number of border pixels to skip right
+;           No pixels are painted if this many pixels in the border color
 ;           are found
 ; Returns:  BX = number of pixels painted
+;           DX reduced by number of border pixels skipped
 ;           CL != 0 if at least one pixel changed
 ;           CSAVEA and CSAVEM set to the point where drawing began, in the
 ;           format returned by FETCHC
+;           Current position updated
 public SCANR
 SCANR proc near
 
@@ -1571,10 +1573,12 @@ SCANR proc near
 
 SCANR endp
 
-; Fill pixels to the right until the boundary color is found
+; Fill pixels to the left until the border color is found
 ; On entry: Setup done with PNTINI
-; Returns:  BX = number of pixels painted
+; Returns:  Start painting one pixel left of current position
+;           BX = number of pixels painted
 ;           CL != 0 if at least one pixel changed
+;           Current position updated
 public SCANL
 SCANL proc near
 
@@ -2704,9 +2708,10 @@ mode_1_SETATR proc near private
     clc
     ret
 
-bit_dup db 00h, 55h, 0AAh, 0FFh
-
 mode_1_SETATR endp
+
+; Shared by mode_1_SETATR and mode_1_PNTINI
+bit_dup db 00h, 55h, 0AAh, 0FFh
 
 ; Read pixel at current position
 ; Returns: AL = pixel attribute
@@ -3155,21 +3160,252 @@ right_mask_1 db 80h, 0C0h, 0E0h, 0F0h, 0F8h, 0FCh, 0FEh, 0FFh
 
 mode_1_NWRITE endp
 
-public mode_1_PNTINI
-mode_1_PNTINI:
-    int 3
-public mode_1_TDOWNC
-mode_1_TDOWNC:
-    int 3
-public mode_1_TUPC
-mode_1_TUPC:
-    int 3
-public mode_1_SCANR
-mode_1_SCANR:
-    int 3
-public mode_1_SCANL
-mode_1_SCANL:
-    int 3
+; Set up flood fill algorithm
+; On entry: AL = border attribute
+; Returns: C set if error
+mode_1_PNTINI proc near private
+
+    ; Duplicate lower two bits through the entire byte
+    push bx
+    and ax, 03h
+    mov bx, ax
+    mov al, bit_dup[bx]
+    pop bx
+    mov border_attr, al
+    clc
+    ret
+
+mode_1_PNTINI endp
+
+; Move current position down with boundary check
+; Returns: C set if moving down would pass the bottom of the screen;
+;          the current position is unchanged in that case
+; This differs from DOWNC only in the boundary check
+; Modes 1 and 2 both use this
+cga_TDOWNC proc near private
+
+    push ax
+
+    mov ax, video_pos
+    cmp ax, 3EF0h
+    jae @error
+    add ax, 2000h
+    cmp ax, 4000h
+    jb @F
+        sub ax, 4000h - 80
+    @@:
+    mov video_pos, ax
+
+    pop ax
+    clc
+    ret
+
+@error:
+    pop ax
+    stc
+    ret
+
+cga_TDOWNC endp
+
+; Move current position up with boundary check
+; Returns: C set if moving up would pass the top of the screen;
+;          the current position is unchanged in that case
+; This differs from UPC only in the boundary check
+; Modes 1 and 2 both use this
+cga_TUPC proc near private
+
+    push ax
+
+    mov ax, video_pos
+    cmp ax, 80
+    jb @error
+    sub ax, 2000h
+    jnc @F
+        add ax, 4000h - 80
+    @@:
+    mov video_pos, ax
+
+    pop ax
+    clc
+    ret
+
+@error:
+    pop ax
+    stc
+    ret
+
+cga_TUPC endp
+
+; On entry: Setup done with PNTINI
+;           DX = number of border pixels to skip right
+;           No pixels are painted if this many pixels in the border color
+;           are found
+; Returns:  BX = number of pixels painted
+;           DX reduced by number of border pixels skipped
+;           CL != 0 if at least one pixel changed
+;           CSAVEA and CSAVEM set to the point where drawing began, in the
+;           format returned by FETCHC
+;           Current position updated
+mode_1_SCANR proc near private
+
+    push ax
+    push si
+    push di
+    push bp
+    push es
+
+    ; Skip right
+    mov cl, 2
+    mov bp, 319
+    mov bx, dx
+    les di, video_addr
+    mov dh, border_attr
+    mov dl, video_bitmask
+    mov si, x_coordinate
+    cmp bx, 0
+    je @paint_not_found
+    @border_scan:
+        ; End loop if a non-border pixel is found
+        mov al, es:[di]
+        xor al, dh          ; border_attr
+        and al, dl          ; video_bitmask
+        jne @paint_found
+        ; Go to next pixel
+        cmp si, bp
+        jae @paint_not_found
+        inc si              ; x_coordinate
+        ror dl, cl
+        jnc @F
+            inc di
+        @@:
+    dec bx
+    jnz @border_scan
+    @paint_not_found:
+        ; No matching pixel found
+        mov video_bitmask, dl
+        mov video_pos, di
+        mov x_coordinate, si
+        xor bx, bx ; Nothing painted
+        xor cl, cl
+        xor dx, dx ; No border pixels remain
+        jmp @end
+
+    @paint_found:
+
+    ; Set position where drawing begins
+    mov CSAVEA, di
+    mov CSAVEM, dl
+    push bx             ; remaining border pixel count
+    xor ch, ch
+    xor bx, bx          ; number of pixels painted
+
+    @paint:
+        ; End loop if a border pixel is found
+        mov al, es:[di]
+        mov ah, al
+        xor al, dh          ; border_attr
+        and al, dl          ; video_bitmask
+        je @end_paint
+        ; Set the new pixel
+        mov al, graph_attr
+        xor al, ah
+        and al, dl          ; video_bitmask
+        or ch, al           ; nonzero if a pixel changed
+        xor al, ah
+        mov es:[di], al
+        ; Go to next pixel
+        cmp si, bp
+        jae @end_paint
+        inc si              ; x_coordinate
+        ror dl, cl
+        inc bx
+        jnc @paint
+            inc di
+    jmp @paint
+    @end_paint:
+
+    mov cl, ch          ; nonzero if any pixel changed
+    mov x_coordinate, si
+    mov video_pos, di
+    mov video_bitmask, dl
+    pop dx              ; remaining border pixel count
+
+@end:
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop ax
+    ret
+
+mode_1_SCANR endp
+
+; Fill pixels to the left until the border color is found
+; On entry: Setup done with PNTINI
+; Returns:  Start painting one pixel left of current position
+;           BX = number of pixels painted
+;           CL != 0 if at least one pixel changed
+;           Current position updated
+mode_1_SCANL proc near private
+
+    push ax
+    push dx
+    push si
+    push di
+    push es
+
+    mov cl, 2
+    les di, video_addr
+    mov dl, video_bitmask
+    mov dh, border_attr
+    mov si, x_coordinate
+    xor ch, ch
+    xor bx, bx
+
+    @paint:
+        ; Go to next pixel
+        rol dl, cl
+        jnc @F
+            dec di
+        @@:
+        dec si          ; x_coordinate
+        js @end_paint
+        ; End loop if a border pixel is found
+        mov al, es:[di]
+        mov ah, al
+        xor al, dh      ; border_attr
+        and al, dl      ; video_bitmask
+        je @end_paint
+        ; Set the new pixel
+        mov al, graph_attr
+        xor al, ah
+        and al, dl      ; video_bitmask
+        or ch, al       ; nonzero if a pixel changed
+        xor al, ah
+        cmp al, ah
+        mov es:[di], al
+        inc bx
+    jmp @paint
+    @end_paint:
+    ; Move back one pixel to the right
+    inc si              ; x_coordinate
+    ror dl, cl
+    jnc @F
+        inc di
+    @@:
+    mov cl, ch              ; At least one pixel changed
+    mov video_pos, di
+    mov video_bitmask, dl
+    mov x_coordinate, si
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop ax
+    ret
+
+mode_1_SCANL endp
 
 ;-----------------------------------------------------------------------------
 ; Speaker support
@@ -3419,6 +3655,8 @@ CSEG ENDS
 DSEG segment public 'DATASG'
 
 extrn TOPMEM:word
+extrn CSAVEA:word
+extrn CSAVEM:byte
 
 ; Blink state saved at init, to restore on exit
 blink_flag db ?
@@ -3457,6 +3695,9 @@ text_attr db 07h
 
 ; Color set by SETATR
 graph_attr db 0
+
+; Color set by PNTINI
+border_attr db 0
 
 ; Maximum line for SCROLL
 max_line db 0
