@@ -2880,15 +2880,281 @@ right_mask_2 db 0C0h, 0F0h, 0FCh, 0FFh
 
 mode_1_NSETCX endp
 
-public mode_1_PGINIT
-mode_1_PGINIT:
-    int 3
-public mode_1_NREAD
-mode_1_NREAD:
-    int 3
-public mode_1_NWRITE
-mode_1_NWRITE:
-    int 3
+; Set up for bit-blit via NREAD or NWRITE
+; On entry: BX = pixel array
+;           CX = number of bits
+;           If C set:
+;           AL = index to a drawing routine (0-4)
+;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
+mode_1_PGINIT proc near private
+
+    mov blit_addr, bx
+    mov blit_bits, cx
+    add cx, 7
+    shr cx, 1
+    shr cx, 1
+    shr cx, 1
+    mov blit_bytes, cx
+    mov cx, blit_bits
+    jnc @F
+        push ax
+        push bx
+        mov bl, al
+        xor bh, bh
+        shl bx, 1
+        mov ax, draw_table[bx]
+        mov blit_mixer, ax
+        pop bx
+        pop ax
+    @@:
+    ret
+
+draw_table dw draw_or
+           dw draw_and
+           dw draw_preset
+           dw draw_pset
+           dw draw_xor
+
+mode_1_PGINIT endp
+
+; Drawing routines set by PGINIT
+; Existing byte in AH; byte to transfer in AL;
+; return combined byte in AL
+draw_or proc near private
+
+    or al, ah
+    ret
+
+draw_or endp
+
+draw_and proc near private
+
+    and al, ah
+    ret
+
+draw_and endp
+
+draw_preset proc near private
+
+    not al
+    ret
+
+draw_preset endp
+
+draw_pset proc near private
+
+    ret
+
+draw_pset endp
+
+draw_xor proc near private
+
+    xor al, ah
+    ret
+
+draw_xor endp
+
+; Read a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          main memory address advanced to next line
+;          pixels read in packed form into main memory
+mode_1_NREAD proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    cld
+
+    ; Shift left this many bits
+    mov cx, x_coordinate
+    shl cl, 1
+    and cl, 07h
+
+    ; Copy and shift the bytes:
+    mov bx, blit_bytes
+    mov dx, ds          ; ES:DI <- DS:blit_addr
+    mov es, dx
+    mov di, blit_addr
+    lds si, video_addr  ; DS:SI <- video_addr
+    ; The first byte supplies the initial carry bits
+    lodsb
+    xor ah, ah
+    shl ax, cl
+    mov ch, al
+    ; Copy the rest
+    @copy:
+        lodsb
+        xor ah, ah
+        shl ax, cl
+        xchg ah, al
+        or al, ch       ; Include the previous carry bits
+        stosb
+        mov ch, ah      ; Keep the next set of carry bits
+    dec bx
+    jne @copy
+    mov ds, dx          ; point DS to data segment again
+
+    ; Advance the local memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+mode_1_NREAD endp
+
+; Write a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          local memory address advanced to the next line
+mode_1_NWRITE proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    cld
+
+    ; Does the transfer cross a byte boundary?
+    mov cx, x_coordinate
+    shl cx, 1
+    and cx, 07h ; this is the shift count
+    mov dx, cx
+    add dx, blit_bits
+    dec dx
+    cmp dx, 8
+    jge @multibyte
+
+        ; Transfer lies within a single byte
+        ; Build bit mask in DH
+        mov bx, cx
+        mov dh, left_mask_1[bx]
+        mov bx, dx
+        and dh, right_mask_1[bx]
+        ; Byte to transfer in AL
+        mov si, blit_addr
+        lodsb
+        shr al, cl
+        ; Existing byte in AH
+        les di, video_addr
+        mov ah, es:[di]
+
+        ; Perform the configured operation, leaving combined byte in AL
+        call blit_mixer
+
+        ; Keep bits where DH is 0; change bits where DH is 1
+        xor al, ah
+        and al, dh
+        xor al, ah
+        stosb
+
+    jmp @end
+    @multibyte:
+
+        ; DS:SI <- local memory address
+        mov si, blit_addr
+        ; ES:DI <- frame buffer
+        les di, video_addr
+
+        ; Transfer left byte
+        lodsb           ; Byte to write
+        mov ah, al
+        xor al, al
+        shr ax, cl
+        mov ch, al      ; Carry bits
+        mov al, ah
+        mov ah, es:[di] ; Existing byte
+        call blit_mixer ; AL <- combined byte
+        mov bl, cl
+        xor bh, bh
+        mov bl, left_mask_1[bx]
+        ; Keep bits where BL is 0; change bits where BL is 1
+        xor al, ah
+        and al, bl
+        xor al, ah
+        stosb
+
+        ; Transfer zero or more whole bytes
+        mov bl, cl
+        xor bh, bh
+        add bx, blit_bits
+        dec bx
+        shr bx, 1
+        shr bx, 1
+        shr bx, 1
+        dec bx
+        jz @end_bytes
+        @bytes:
+            lodsb       ; Byte to write
+            mov ah, al
+            xor al, al
+            shr ax, cl
+            or ah, ch   ; Carry in
+            mov ch, al  ; Carry out
+            mov al, ah
+            mov ah, es:[di] ; Existing byte
+            call blit_mixer ; AL <- combined byte
+            stosb
+        dec bx
+        jnz @bytes
+        @end_bytes:
+
+        ; Transfer right byte
+        lodsb
+        mov ah, al
+        xor al, al
+        shr ax, cl
+        or ah, ch   ; Carry in
+        mov al, ah
+        mov ah, es:[di] ; Existing byte
+        call blit_mixer ; AL <- combined byte
+        mov bx, cx
+        add bx, blit_bits
+        dec bx
+        and bx, 07h
+        mov bl, right_mask_1[bx]
+        ; Keep bits where BL is 0; change bits where BL is 1
+        xor al, ah
+        and al, bl
+        xor al, ah
+        stosb
+
+    @end:
+
+    ; Advance the local memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+left_mask_1 db 0FFh, 7Fh, 3Fh, 1Fh, 0Fh, 07h, 03h, 01h
+right_mask_1 db 80h, 0C0h, 0E0h, 0F0h, 0F8h, 0FCh, 0FEh, 0FFh
+
+mode_1_NWRITE endp
+
 public mode_1_PNTINI
 mode_1_PNTINI:
     int 3
@@ -3198,6 +3464,12 @@ max_line db 0
 ; Active page (where we draw) and visible page (what we see)
 active_page db 0
 visible_page db 0
+
+; Bit-blit parameters
+blit_addr dw ?
+blit_bits dw ?
+blit_bytes dw ?
+blit_mixer dw ?
 
 DSEG ends
 
