@@ -863,25 +863,25 @@ screen_mode_1 label word
     dw generic_FKYFMT         ; FKYFMT_handler
     dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
-    dw mode_1_STOREC          ; STOREC_handler
+    dw cga_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
     dw cga_UPC                ; UPC_handler
     dw cga_DOWNC              ; DOWNC_handler
-    dw mode_1_LEFTC           ; LEFTC_handler
-    dw mode_1_RIGHTC          ; RIGHTC_handler
-    dw mode_1_MAPXYC          ; MAPXYC_handler
+    dw cga_LEFTC              ; LEFTC_handler
+    dw cga_RIGHTC             ; RIGHTC_handler
+    dw cga_MAPXYC             ; MAPXYC_handler
     dw mode_1_SETATR          ; SETATR_handler
-    dw mode_1_READC           ; READC_handler
+    dw cga_READC              ; READC_handler
     dw cga_SETC               ; SETC_handler
-    dw mode_1_NSETCX          ; NSETCX_handler
-    dw mode_1_PGINIT          ; PGINIT_handler
-    dw mode_1_NREAD           ; NREAD_handler
-    dw mode_1_NWRITE          ; NWRITE_handler
+    dw cga_NSETCX             ; NSETCX_handler
+    dw cga_PGINIT             ; PGINIT_handler
+    dw cga_NREAD              ; NREAD_handler
+    dw cga_NWRITE             ; NWRITE_handler
     dw mode_1_PNTINI          ; PNTINI_handler
     dw cga_TDOWNC             ; TDOWNC_handler
     dw cga_TUPC               ; TUPC_handler
-    dw mode_1_SCANR           ; SCANR_handler
-    dw mode_1_SCANL           ; SCANL_handler
+    dw cga_SCANR              ; SCANR_handler
+    dw cga_SCANL              ; SCANL_handler
     db 40                     ; text_columns
     db 25                     ; text_rows
     dw 320                    ; x_res
@@ -912,25 +912,25 @@ screen_mode_2 label word
     dw generic_FKYFMT         ; FKYFMT_handler
     dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
-    dw mode_2_STOREC          ; STOREC_handler
+    dw cga_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
     dw cga_UPC                ; UPC_handler
     dw cga_DOWNC              ; DOWNC_handler
-    dw mode_2_LEFTC           ; LEFTC_handler
-    dw mode_2_RIGHTC          ; RIGHTC_handler
-    dw mode_2_MAPXYC          ; MAPXYC_handler
+    dw cga_LEFTC              ; LEFTC_handler
+    dw cga_RIGHTC             ; RIGHTC_handler
+    dw cga_MAPXYC             ; MAPXYC_handler
     dw mode_2_SETATR          ; SETATR_handler
-    dw mode_2_READC           ; READC_handler
+    dw cga_READC              ; READC_handler
     dw cga_SETC               ; SETC_handler
-    dw mode_2_NSETCX          ; NSETCX_handler
-    dw mode_2_PGINIT          ; PGINIT_handler
-    dw mode_2_NREAD           ; NREAD_handler
-    dw mode_2_NWRITE          ; NWRITE_handler
+    dw cga_NSETCX             ; NSETCX_handler
+    dw cga_PGINIT             ; PGINIT_handler
+    dw cga_NREAD              ; NREAD_handler
+    dw cga_NWRITE             ; NWRITE_handler
     dw mode_2_PNTINI          ; PNTINI_handler
     dw cga_TDOWNC             ; TDOWNC_handler
     dw cga_TUPC               ; TUPC_handler
-    dw mode_2_SCANR           ; SCANR_handler
-    dw mode_2_SCANL           ; SCANL_handler
+    dw cga_SCANR              ; SCANR_handler
+    dw cga_SCANL              ; SCANL_handler
     db 80                     ; text_columns
     db 25                     ; text_rows
     dw 640                    ; x_res
@@ -1195,58 +1195,44 @@ SETCLR proc near
     push ax
     push bx
     push cx
+    push dx
     push di
 
+    ; Address parameters from SI
+    mov di, bx
+
     ; Get number of parameters
-    mov cl, [bx]
-    inc bx
+    mov al, [di]
 
-    ; Parameter 1: foreground color
-    dec cl
-    js @error   ; error if no parameters
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_1
-        mov foreground_color, ah
-    @end_1:
+    ; Mark parameters as unspecified
+    xor bx, bx
+    xor cx, cx
+    xor dx, dx
 
-    ; Parameter 2: background color
-    dec cl
-    js @exit
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_2
-        mov background_color, ah
-    @end_2:
+    dec al
+    stc
+    js @error   ; Must have at least one
+        mov bx, 1[di]
 
-    ; Parameter 3: border color
-    dec cl
-    js @exit
-    mov ax, [bx]
-    add bx, 2
-    or al, al
-    je @end_3
-        mov border_color, ah
-    @end_3:
+    dec al
+    js @end
+        mov cx, 3[di]
 
-@exit:
+    dec al
+    js @end
+        mov dx, 5[di]
+
+    @end:
+    ; Go to mode-specific handler
     mov di, mode_ptr
     call cs:Screen_Mode.SETCLR_handler[di]
 
-    pop di
-    pop cx
-    pop bx
-    pop ax
-    clc
-    ret
-
 @error:
+    pop di
+    pop dx
     pop cx
     pop bx
     pop ax
-    stc
     ret
 
 SETCLR endp
@@ -2259,14 +2245,38 @@ mode_0_SCRATR proc near private
 mode_0_SCRATR endp
 
 ; Set up configured colors
-; On entry: foreground_color, background_color and border_color updated
+; On entry: BL != 0 if parameter 1 specified
+;           BH contains parameter 1
+;           CL != 0 if parameter 2 specified
+;           CH contains parameter 1
+;           DL != 0 if parameter 3 specified
+;           DH contains parameter 3
+; Returns: C set if error
 mode_0_SETCLR proc near private
 
+    test bl, bl
+    je @F
+        mov foreground_color, bh
+    @@:
+
+    test cl, cl
+    je @F
+        mov background_color, ch
+    @@:
+
+    test dl, dl
+    je @F
+        push ax
+        push bx
+        mov bl, dh  ; border color
+        mov bh, 0
+        mov ah, 0Bh
+        int 10h
+        pop bx
+        pop ax
+    @@:
+
     call mode_0_set_text_attr
-    mov bl, border_color
-    mov bh, 0
-    mov ah, 0Bh
-    int 10h
     clc
     ret
 
@@ -2524,21 +2534,43 @@ cga_CLRSCN proc near
 cga_CLRSCN endp
 
 ; Set up configured colors
-; On entry: foreground_color, background_color and border_color updated
+; On entry: BL != 0 if parameter 1 specified
+;           BH contains parameter 1
+;           CL != 0 if parameter 2 specified
+;           CH contains parameter 1
+;           DL != 0 if parameter 3 specified
+;           DH contains parameter 3
+; Returns: C set if error
 mode_1_SETCLR proc near private
 
-    ; Mode 1 uses foreground_color as background color and background_color
-    ; to select between two possible palettes.
-    mov bl, foreground_color ; COLOR parameter 1
-    and bl, 0Fh
-    mov bh, 0
-    mov ah, 0Bh
-    int 10h
-    mov bl, background_color ; COLOR parameter 2
-    and bl, 01h
-    mov bh, 1
-    mov ah, 0Bh
-    int 10h
+    or cl, cl
+    je @F
+        ; Mode 1 palette selection
+        push ax
+        push bx
+        mov bl, ch
+        and bl, 1
+        mov bh, 1
+        mov ah, 0Bh
+        int 10h
+        pop bx
+        pop ax
+    @@:
+
+    or bl, bl
+    je @F
+        ; Mode 1 background color
+        push ax
+        push bx
+        mov bl, bh
+        xor bl, 10h ; Keep the foreground in bright colors
+        mov bh, 0
+        mov ah, 0Bh
+        int 10h
+        pop bx
+        pop ax
+    @@:
+
     clc
     ret
 
@@ -2568,7 +2600,8 @@ mode_1_SETFBC endp
 ; Set a cursor position retrieved from FETCHC
 ; On entry: AL:BX = cursor position
 ; Returns:  none
-mode_1_STOREC proc near private
+; Modes 1 and 2 both use this
+cga_STOREC proc near private
 
     push ax
     push dx
@@ -2594,6 +2627,13 @@ mode_1_STOREC proc near private
     je @F
         or dx, 1
     @@:
+    ; For mode 2
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    jne @F
+    test al, 55h
+    je @F
+        or dx, 1
+    @@:
 
     mov x_coordinate, dx
 
@@ -2601,7 +2641,7 @@ mode_1_STOREC proc near private
     pop ax
     ret
 
-mode_1_STOREC endp
+cga_STOREC endp
 
 ; Move one pixel up
 ; On entry: none
@@ -2647,16 +2687,18 @@ cga_DOWNC endp
 ; Move one pixel left
 ; On entry: none
 ; Returns   none
-mode_1_LEFTC proc near private
+; Modes 1 and 2 both use this
+cga_LEFTC proc near private
 
     push ax
+    push cx
 
     dec x_coordinate
 
     ; Shift the bit mask left
     mov al, video_bitmask
-    rol al, 1
-    rol al, 1
+    mov cl,cs:Screen_Mode.pixel_size[di]
+    rol al, cl
     mov video_bitmask, al
 
     ; Carry into the address
@@ -2664,24 +2706,27 @@ mode_1_LEFTC proc near private
         dec video_pos
     @@:
 
+    pop cx
     pop ax
     ret
 
-mode_1_LEFTC endp
+cga_LEFTC endp
 
 ; Move one pixel right
 ; On entry: none
 ; Returns   none
-mode_1_RIGHTC proc near private
+; Modes 1 and 2 both use this
+cga_RIGHTC proc near private
 
     push ax
+    push cx
 
     inc x_coordinate
 
     ; Shift the bit mask right
     mov al, video_bitmask
-    ror al, 1
-    ror al, 1
+    mov cl,cs:Screen_Mode.pixel_size[di]
+    ror al, cl
     mov video_bitmask, al
 
     ; Carry into the address
@@ -2689,59 +2734,74 @@ mode_1_RIGHTC proc near private
         inc video_pos
     @@:
 
+    pop cx
     pop ax
     ret
 
-mode_1_RIGHTC endp
+cga_RIGHTC endp
 
 ; Map pixel coordinates to a cursor position as returned by FETCHC
 ; On entry: CX = X coordinate
 ;           DX = Y coordinate
 ; Returns: none
-mode_1_MAPXYC proc near private
+; Modes 1 and 2 both use this
+cga_MAPXYC proc near private
 
     push ax
     push bx
     push cx
-    push di
+    push si
 
     mov x_coordinate, cx
 
     ; Bit 1 of the Y coordinate goes to bit 13 of the address
-    xor di, di
+    xor si, si
     shr dl, 1
-    rcr di, 1
-    shr di, 1
-    shr di, 1
+    rcr si, 1
+    shr si, 1
+    shr si, 1
 
     ; Rest of the Y coordinate times 80
     mov al, 80
     mul dl
-    add di, ax
+    add si, ax
 
-    ; X coordinate divided by 4
+    ; X coordinate divided by 4 or 8
     mov ax, cx
     shr ax, 1
     shr ax, 1
-    add di, ax
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    jne @F
+        shr ax, 1
+    @@:
+    add si, ax
 
-    ; Bit mask from X mod 4
-    and cl, 03h
-    shl cl, 1
-    mov al, 0C0h
+    ; Bit mask from X mod 4 or 8
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    je @mode_2
+        ; Mode 1
+        and cl, 03h
+        shl cl, 1
+        mov al, 0C0h
+    jmp @end_mode
+    @mode_2:
+        ; Mode 2
+        and cl, 07h
+        mov al, 080h
+    @end_mode:
     shr al, cl
 
     ; Save the graphics cursor position
-    mov video_pos, di
+    mov video_pos, si
     mov video_bitmask, al
 
-    pop di
+    pop si
     pop dx
     pop cx
     pop ax
     ret
 
-mode_1_MAPXYC endp
+cga_MAPXYC endp
 
 ; Set the pixel attribute to be drawn
 ; On entry: AL = attribute
@@ -2765,7 +2825,8 @@ bit_dup db 00h, 55h, 0AAh, 0FFh
 
 ; Read pixel at current position
 ; Returns: AL = pixel attribute
-mode_1_READC proc near private
+; Modes 1 and 2 both use this
+cga_READC proc near private
 
     push bx
     push cx
@@ -2779,20 +2840,29 @@ mode_1_READC proc near private
 
     ; Shift count
     mov cx, x_coordinate
-    and cl, 03h ; 0 1 2 3
-    xor cl, 03h ; 3 2 1 0
-    shl cl, 1   ; 6 4 2 0
+    xor cl, 07h
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    je @mode_2
+        ; Mode 1
+        shl cl, 1
+        mov ah, 03h
+    jmp @end_mode
+    @mode_2:
+        ; Mode 2
+        mov ah, 01h
+    @end_mode:
+    and cl, 07h
 
     ; Shift the bits into place
     shr al, cl
-    and al, 03h
+    and al, ah
 
     pop es
     pop cx
     pop bx
     ret
 
-mode_1_READC endp
+cga_READC endp
 
 ; Write pixel at current location, using current attribute
 ; Returns: none
@@ -2830,7 +2900,8 @@ cga_SETC endp
 ; Write multiple pixels starting at current position and proceeding right
 ; On entry: BX = pixel count
 ; Returns:  none
-mode_1_NSETCX proc near private
+; Modes 1 and 2 both use this
+cga_NSETCX proc near private
 
     push ax
     push bx
@@ -2845,25 +2916,31 @@ mode_1_NSETCX proc near private
     ; Start and end of draw
     mov dx, x_coordinate
     add bx, dx
-    cmp bx, 320
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    je @F
+        ; Mode 1
+        shl bx, 1
+        shl dx, 1
+    @@:
+    cmp bx, 640
     jb @F
-        mov bx, 320
+        mov bx, 640
     @@:
     dec bx
 
     ; Does the draw cross a byte boundary?
     mov ax, bx
     xor ax, dx
-    and ax, 0FFFCh
+    and ax, 0FFF8h
     jnz @multibyte
 
         ; Draw lies within a single byte
         mov si, dx
-        and si, 03h
-        mov cl, left_mask_2[si]
+        and si, 07h
+        mov cl, left_mask_1[si]
         mov si, bx
-        and si, 03h
-        and cl, right_mask_2[si] ; CL has 1 where bits will be replaced
+        and si, 07h
+        and cl, right_mask_1[si] ; CL has 1 where bits will be replaced
         les di, video_addr
         mov ah, es:[di]        ; AL <- existing byte
         mov al, graph_attr
@@ -2882,8 +2959,8 @@ mode_1_NSETCX proc near private
         mov ch, graph_attr
         les di, video_addr
         mov si, dx
-        and si, 03h
-        mov cl, left_mask_2[si]
+        and si, 07h
+        mov cl, left_mask_1[si]
         mov ah, es:[di]        ; AL <- existing byte
         mov al, ch
         ; where CL has 0: AL <- AH
@@ -2895,8 +2972,8 @@ mode_1_NSETCX proc near private
 
         ; Draw zero or more whole bytes
         mov si, bx      ; Save right partial byte for the end
-        and si, 03h
-        mov cl, 2
+        and si, 07h
+        mov cl, 3
         shr bx, cl
         shr dx, cl
         sub bx, dx
@@ -2909,7 +2986,7 @@ mode_1_NSETCX proc near private
         @end_whole:
 
         ; Draw the last byte
-        mov cl, right_mask_2[si]
+        mov cl, right_mask_1[si]
         mov ah, es:[di]        ; AH <- existing byte
         mov al, ch
         ; where CL has 0: AL <- AH
@@ -2930,10 +3007,7 @@ mode_1_NSETCX proc near private
     pop ax
     ret
 
-left_mask_2 db 0FFh, 03Fh, 0Fh, 03h
-right_mask_2 db 0C0h, 0F0h, 0FCh, 0FFh
-
-mode_1_NSETCX endp
+cga_NSETCX endp
 
 ; Set up for bit-blit via NREAD or NWRITE
 ; On entry: BX = pixel array
@@ -2941,7 +3015,8 @@ mode_1_NSETCX endp
 ;           If C set:
 ;           AL = index to a drawing routine (0-4)
 ;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
-mode_1_PGINIT proc near private
+; Modes 1 and 2 both use this
+cga_PGINIT proc near private
 
     mov blit_addr, bx
     mov blit_bits, cx
@@ -2964,7 +3039,7 @@ mode_1_PGINIT proc near private
     @@:
     ret
 
-mode_1_PGINIT endp
+cga_PGINIT endp
 
 draw_table dw draw_or
            dw draw_and
@@ -3014,7 +3089,8 @@ draw_xor endp
 ; Returns: none in registers
 ;          main memory address advanced to next line
 ;          pixels read in packed form into main memory
-mode_1_NREAD proc near private
+; Modes 1 and 2 both use this
+cga_NREAD proc near private
 
     push ax
     push bx
@@ -3028,7 +3104,11 @@ mode_1_NREAD proc near private
 
     ; Shift left this many bits
     mov cx, x_coordinate
-    shl cl, 1
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    je @F
+        ; Mode 1
+        shl cl, 1
+    @@:
     and cl, 07h
 
     ; Copy and shift the bytes:
@@ -3068,13 +3148,14 @@ mode_1_NREAD proc near private
     pop ax
     ret
 
-mode_1_NREAD endp
+cga_NREAD endp
 
 ; Write a line of pixels
 ; On entry: PGINIT complete
 ; Returns: none in registers
 ;          local memory address advanced to the next line
-mode_1_NWRITE proc near private
+; Modes 1 and 2 both use this
+cga_NWRITE proc near private
 
     push ax
     push bx
@@ -3088,7 +3169,11 @@ mode_1_NWRITE proc near private
 
     ; Does the transfer cross a byte boundary?
     mov cx, x_coordinate
-    shl cx, 1
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    je @F
+        ; Mode 1
+        shl cl, 1
+    @@:
     and cx, 07h ; this is the shift count
     mov dx, cx
     add dx, blit_bits
@@ -3205,7 +3290,7 @@ mode_1_NWRITE proc near private
     pop ax
     ret
 
-mode_1_NWRITE endp
+cga_NWRITE endp
 
 left_mask_1 db 0FFh, 7Fh, 3Fh, 1Fh, 0Fh, 07h, 03h, 01h
 right_mask_1 db 80h, 0C0h, 0E0h, 0F0h, 0F8h, 0FCh, 0FEh, 0FFh
@@ -3296,7 +3381,8 @@ cga_TUPC endp
 ;           CSAVEA and CSAVEM set to the point where drawing began, in the
 ;           format returned by FETCHC
 ;           Current position updated
-mode_1_SCANR proc near private
+; Modes 1 and 2 both use this
+cga_SCANR proc near private
 
     push ax
     push si
@@ -3305,8 +3391,16 @@ mode_1_SCANR proc near private
     push es
 
     ; Skip right
-    mov cl, 2
-    mov bp, 319
+    mov cl, cs:Screen_Mode.pixel_size[di]
+    cmp cl, 1
+    je @mode_2
+        ; Mode 1
+        mov bp, 319
+    jmp @end_mode
+    @mode_2:
+        ; Mode 2
+        mov bp, 639
+    @end_mode:
     mov bx, dx
     les di, video_addr
     mov dh, border_attr
@@ -3388,7 +3482,7 @@ mode_1_SCANR proc near private
     pop ax
     ret
 
-mode_1_SCANR endp
+cga_SCANR endp
 
 ; Fill pixels to the left until the border color is found
 ; On entry: Setup done with PNTINI
@@ -3396,7 +3490,8 @@ mode_1_SCANR endp
 ;           BX = number of pixels painted
 ;           CL != 0 if at least one pixel changed
 ;           Current position updated
-mode_1_SCANL proc near private
+; Modes 1 and 2 both use this
+cga_SCANL proc near private
 
     push ax
     push dx
@@ -3404,7 +3499,7 @@ mode_1_SCANL proc near private
     push di
     push es
 
-    mov cl, 2
+    mov cl, cs:Screen_Mode.pixel_size[di]
     les di, video_addr
     mov dl, video_bitmask
     mov dh, border_attr
@@ -3455,11 +3550,12 @@ mode_1_SCANL proc near private
     pop ax
     ret
 
-mode_1_SCANL endp
+cga_SCANL endp
 
 ;-----------------------------------------------------------------------------
 ; Screen mode 2: CGA 640x200, 2 colors
 ;-----------------------------------------------------------------------------
+; Most of this is shared with mode 1
 
 ; Set up mode 2
 mode_2_SCRSTT_init proc near private
@@ -3489,20 +3585,31 @@ mode_2_SCRSTT_init proc near private
 mode_2_SCRSTT_init endp
 
 ; Set up configured colors
-; On entry: foreground_color, background_color and border_color updated
+; On entry: BL != 0 if parameter 1 specified
+;           BH contains parameter 1
+;           CL != 0 if parameter 2 specified
+;           CH contains parameter 1
+;           DL != 0 if parameter 3 specified
+;           DH contains parameter 3
+; Returns: C set if error
 mode_2_SETCLR proc near private
 
-    ; TODO: keep this for now, and see what happens when it is used
-    mov bl, foreground_color ; COLOR parameter 1
-    and bl, 0Fh
-    mov bh, 0
-    mov ah, 0Bh
-    int 10h
-    mov bl, background_color ; COLOR parameter 2
-    and bl, 01h
-    mov bh, 1
-    mov ah, 0Bh
-    int 10h
+    ; Original GW-BASIC doesn't allow COLOR in mode 2, but I see no need to
+    ; restrict the user here
+    or bl, bl
+    je @F
+        ; Mode 1 background color
+        push ax
+        push bx
+        mov bl, bh
+        xor bl, 10h ; Keep the foreground in bright colors
+        mov bh, 0
+        mov ah, 0Bh
+        int 10h
+        pop bx
+        pop ax
+    @@:
+
     clc
     ret
 
@@ -3519,522 +3626,19 @@ mode_2_SWIDTH proc near private
 
 mode_2_SWIDTH endp
 
-; Set a cursor position retrieved from FETCHC
-; On entry: AL:BX = cursor position
-; Returns:  none
-mode_2_STOREC proc near private
-
-    push ax
-    push dx
-
-    mov video_pos, bx
-    mov video_bitmask, al
-
-    ; Recover the X coordinate
-    mov ax, bx
-    and ax, 1FFFh ; exclude the odd-line bit
-    mov dl, 80
-    div dl        ; AH <- byte offset within line
-    mov dl, ah    ; to 16 bit in DX
-    xor dh, dh
-    shl dx, 1     ; convert to pixel coordinate
-    shl dx, 1
-    shl dx, 1
-    mov al, video_bitmask
-    test al, 0Fh  ; get the lower two bits
-    je @F
-        or dx, 4
-    @@:
-    test al, 33h
-    je @F
-        or dx, 2
-    @@:
-    test al, 55h
-    je @F
-        or dx, 1
-    @@:
-
-    mov x_coordinate, dx
-
-    pop dx
-    pop ax
-    ret
-
-mode_2_STOREC endp
-
-; Move one pixel left
-; On entry: none
-; Returns   none
-mode_2_LEFTC proc near private
-
-    push ax
-
-    dec x_coordinate
-
-    ; Shift the bit mask left
-    mov al, video_bitmask
-    rol al, 1
-    mov video_bitmask, al
-
-    ; Carry into the address
-    jnc @F
-        dec video_pos
-    @@:
-
-    pop ax
-    ret
-
-mode_2_LEFTC endp
-
-; Move one pixel right
-; On entry: none
-; Returns   none
-mode_2_RIGHTC proc near private
-
-    push ax
-
-    inc x_coordinate
-
-    ; Shift the bit mask right
-    mov al, video_bitmask
-    ror al, 1
-    mov video_bitmask, al
-
-    ; Carry into the address
-    jnc @F
-        inc video_pos
-    @@:
-
-    pop ax
-    ret
-
-mode_2_RIGHTC endp
-
-; Map pixel coordinates to a cursor position as returned by FETCHC
-; On entry: CX = X coordinate
-;           DX = Y coordinate
-; Returns: none
-mode_2_MAPXYC proc near private
-
-    push ax
-    push bx
-    push cx
-    push di
-
-    mov x_coordinate, cx
-
-    ; Bit 1 of the Y coordinate goes to bit 13 of the address
-    xor di, di
-    shr dl, 1
-    rcr di, 1
-    shr di, 1
-    shr di, 1
-
-    ; Rest of the Y coordinate times 80
-    mov al, 80
-    mul dl
-    add di, ax
-
-    ; X coordinate divided by 8
-    mov ax, cx
-    shr ax, 1
-    shr ax, 1
-    shr ax, 1
-    add di, ax
-
-    ; Bit mask from X mod 8
-    and cl, 07h
-    mov al, 080h
-    shr al, cl
-
-    ; Save the graphics cursor position
-    mov video_pos, di
-    mov video_bitmask, al
-
-    pop di
-    pop dx
-    pop cx
-    pop ax
-    ret
-
-mode_2_MAPXYC endp
-
 ; Set the pixel attribute to be drawn
 ; On entry: AL = attribute
 ; Returns:  C set if error
 mode_2_SETATR proc near private
 
     ; Duplicate lower bit through the entire byte
-    shr al, 1
-    mov al, 0
-    sbb al, al
+    and al, 1
+    neg al
     mov graph_attr, al
     clc
     ret
 
 mode_2_SETATR endp
-
-; Read pixel at current position
-; Returns: AL = pixel attribute
-mode_2_READC proc near private
-
-    push bx
-    push cx
-    push es
-
-    ; Address in frame buffer
-    les bx, video_addr
-
-    ; Current pixels
-    mov al, es:[bx]
-
-    ; Shift count
-    mov cx, x_coordinate
-    and cl, 07h ; 0 1 2 3 4 5 6 7
-    xor cl, 07h ; 7 6 5 4 3 2 1 0
-
-    ; Shift the bit into place
-    shr al, cl
-    and al, 01h
-
-    pop es
-    pop cx
-    pop bx
-    ret
-
-mode_2_READC endp
-
-; Write multiple pixels starting at current position and proceeding right
-; On entry: BX = pixel count
-; Returns:  none
-mode_2_NSETCX proc near private
-
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push es
-
-    cld
-
-    ; Start and end of draw
-    mov dx, x_coordinate
-    add bx, dx
-    cmp bx, 640
-    jb @F
-        mov bx, 640
-    @@:
-    dec bx
-
-    ; Does the draw cross a byte boundary?
-    mov ax, bx
-    xor ax, dx
-    and ax, 0FFF8h
-    jnz @multibyte
-
-        ; Draw lies within a single byte
-        mov si, dx
-        and si, 07h
-        mov cl, left_mask_1[si]
-        mov si, bx
-        and si, 07h
-        and cl, right_mask_1[si] ; CL has 1 where bits will be replaced
-        les di, video_addr
-        mov ah, es:[di]        ; AL <- existing byte
-        mov al, graph_attr
-        ; where CL has 0: AL <- AH
-        ; where CL has 1: AL <- AL
-        xor al, ah
-        and al, cl
-        xor al, ah
-        stosb
-
-    jmp @end
-    @multibyte:
-
-        ; Draw spans two or more bytes
-        ; Draw the first byte
-        mov ch, graph_attr
-        les di, video_addr
-        mov si, dx
-        and si, 07h
-        mov cl, left_mask_1[si]
-        mov ah, es:[di]        ; AL <- existing byte
-        mov al, ch
-        ; where CL has 0: AL <- AH
-        ; where CL has 1: AL <- AL
-        xor al, ah
-        and al, cl
-        xor al, ah
-        stosb
-
-        ; Draw zero or more whole bytes
-        mov si, bx      ; Save right partial byte for the end
-        and si, 07h
-        mov cl, 3
-        shr bx, cl
-        shr dx, cl
-        sub bx, dx
-        dec bx
-        je @end_whole
-            mov al, ch  ; AL <- graph_attr
-            mov cx, bx
-            rep stosb
-            mov ch, al  ; CH <- graph_attr
-        @end_whole:
-
-        ; Draw the last byte
-        mov cl, right_mask_1[si]
-        mov ah, es:[di]        ; AH <- existing byte
-        mov al, ch
-        ; where CL has 0: AL <- AH
-        ; where CL has 1: AL <- AL
-        xor al, ah
-        and al, cl
-        xor al, ah
-        stosb
-
-    @end:
-
-    pop es
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-mode_2_NSETCX endp
-
-; Set up for bit-blit via NREAD or NWRITE
-; On entry: BX = pixel array
-;           CX = number of bits
-;           If C set:
-;           AL = index to a drawing routine (0-4)
-;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
-mode_2_PGINIT proc near private
-
-    mov blit_addr, bx
-    mov blit_bits, cx
-    add cx, 7
-    shr cx, 1
-    shr cx, 1
-    shr cx, 1
-    mov blit_bytes, cx
-    mov cx, blit_bits
-    jnc @F
-        push ax
-        push bx
-        mov bl, al
-        xor bh, bh
-        shl bx, 1
-        mov ax, draw_table[bx]
-        mov blit_mixer, ax
-        pop bx
-        pop ax
-    @@:
-    ret
-
-mode_2_PGINIT endp
-
-; Read a line of pixels
-; On entry: PGINIT complete
-; Returns: none in registers
-;          main memory address advanced to next line
-;          pixels read in packed form into main memory
-mode_2_NREAD proc near private
-
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push es
-
-    cld
-
-    ; Shift left this many bits
-    mov cx, x_coordinate
-    and cl, 07h
-
-    ; Copy and shift the bytes:
-    mov bx, blit_bytes
-    mov dx, ds          ; ES:DI <- DS:blit_addr
-    mov es, dx
-    mov di, blit_addr
-    lds si, video_addr  ; DS:SI <- video_addr
-    ; The first byte supplies the initial carry bits
-    lodsb
-    xor ah, ah
-    shl ax, cl
-    mov ch, al
-    ; Copy the rest
-    @copy:
-        lodsb
-        xor ah, ah
-        shl ax, cl
-        xchg ah, al
-        or al, ch       ; Include the previous carry bits
-        stosb
-        mov ch, ah      ; Keep the next set of carry bits
-    dec bx
-    jne @copy
-    mov ds, dx          ; point DS to data segment again
-
-    ; Advance the local memory address
-    mov ax, blit_bytes
-    add blit_addr, ax
-
-    pop es
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-mode_2_NREAD endp
-
-; Write a line of pixels
-; On entry: PGINIT complete
-; Returns: none in registers
-;          local memory address advanced to the next line
-mode_2_NWRITE proc near private
-
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    push es
-
-    cld
-
-    ; Does the transfer cross a byte boundary?
-    mov cx, x_coordinate
-    and cx, 07h ; this is the shift count
-    mov dx, cx
-    add dx, blit_bits
-    dec dx
-    cmp dx, 8
-    jge @multibyte
-
-        ; Transfer lies within a single byte
-        ; Build bit mask in DH
-        mov bx, cx
-        mov dh, left_mask_1[bx]
-        mov bx, dx
-        and dh, right_mask_1[bx]
-        ; Byte to transfer in AL
-        mov si, blit_addr
-        lodsb
-        shr al, cl
-        ; Existing byte in AH
-        les di, video_addr
-        mov ah, es:[di]
-
-        ; Perform the configured operation, leaving combined byte in AL
-        call blit_mixer
-
-        ; Keep bits where DH is 0; change bits where DH is 1
-        xor al, ah
-        and al, dh
-        xor al, ah
-        stosb
-
-    jmp @end
-    @multibyte:
-
-        ; DS:SI <- local memory address
-        mov si, blit_addr
-        ; ES:DI <- frame buffer
-        les di, video_addr
-
-        ; Transfer left byte
-        lodsb           ; Byte to write
-        mov ah, al
-        xor al, al
-        shr ax, cl
-        mov ch, al      ; Carry bits
-        mov al, ah
-        mov ah, es:[di] ; Existing byte
-        call blit_mixer ; AL <- combined byte
-        mov bl, cl
-        xor bh, bh
-        mov bl, left_mask_1[bx]
-        ; Keep bits where BL is 0; change bits where BL is 1
-        xor al, ah
-        and al, bl
-        xor al, ah
-        stosb
-
-        ; Transfer zero or more whole bytes
-        mov bl, cl
-        xor bh, bh
-        add bx, blit_bits
-        dec bx
-        shr bx, 1
-        shr bx, 1
-        shr bx, 1
-        dec bx
-        jz @end_bytes
-        @bytes:
-            lodsb       ; Byte to write
-            mov ah, al
-            xor al, al
-            shr ax, cl
-            or ah, ch   ; Carry in
-            mov ch, al  ; Carry out
-            mov al, ah
-            mov ah, es:[di] ; Existing byte
-            call blit_mixer ; AL <- combined byte
-            stosb
-        dec bx
-        jnz @bytes
-        @end_bytes:
-
-        ; Transfer right byte
-        lodsb
-        mov ah, al
-        xor al, al
-        shr ax, cl
-        or ah, ch   ; Carry in
-        mov al, ah
-        mov ah, es:[di] ; Existing byte
-        call blit_mixer ; AL <- combined byte
-        mov bx, cx
-        add bx, blit_bits
-        dec bx
-        and bx, 07h
-        mov bl, right_mask_1[bx]
-        ; Keep bits where BL is 0; change bits where BL is 1
-        xor al, ah
-        and al, bl
-        xor al, ah
-        stosb
-
-    @end:
-
-    ; Advance the local memory address
-    mov ax, blit_bytes
-    add blit_addr, ax
-
-    pop es
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-mode_2_NWRITE endp
 
 ; Set up flood fill algorithm
 ; On entry: AL = border attribute
@@ -4042,185 +3646,13 @@ mode_2_NWRITE endp
 mode_2_PNTINI proc near private
 
     ; Duplicate lower bit through the entire byte
-    shr al, 1
-    mov al, 0
-    sbb al, al
+    and al, 1
+    neg al
     mov border_attr, al
     clc
     ret
 
 mode_2_PNTINI endp
-
-; On entry: Setup done with PNTINI
-;           DX = number of border pixels to skip right
-;           No pixels are painted if this many pixels in the border color
-;           are found
-; Returns:  BX = number of pixels painted
-;           DX reduced by number of border pixels skipped
-;           CL != 0 if at least one pixel changed
-;           CSAVEA and CSAVEM set to the point where drawing began, in the
-;           format returned by FETCHC
-;           Current position updated
-mode_2_SCANR proc near private
-
-    push ax
-    push si
-    push di
-    push bp
-    push es
-
-    ; Skip right
-    mov cl, 1
-    mov bp, 639
-    mov bx, dx
-    les di, video_addr
-    mov dh, border_attr
-    mov dl, video_bitmask
-    mov si, x_coordinate
-    cmp bx, 0
-    je @paint_not_found
-    @border_scan:
-        ; End loop if a non-border pixel is found
-        mov al, es:[di]
-        xor al, dh          ; border_attr
-        and al, dl          ; video_bitmask
-        jne @paint_found
-        ; Go to next pixel
-        cmp si, bp
-        jae @paint_not_found
-        inc si              ; x_coordinate
-        ror dl, cl
-        jnc @F
-            inc di
-        @@:
-    dec bx
-    jnz @border_scan
-    @paint_not_found:
-        ; No matching pixel found
-        mov video_bitmask, dl
-        mov video_pos, di
-        mov x_coordinate, si
-        xor bx, bx ; Nothing painted
-        xor cl, cl
-        xor dx, dx ; No border pixels remain
-        jmp @end
-
-    @paint_found:
-
-    ; Set position where drawing begins
-    mov CSAVEA, di
-    mov CSAVEM, dl
-    push bx             ; remaining border pixel count
-    xor ch, ch
-    xor bx, bx          ; number of pixels painted
-
-    @paint:
-        ; End loop if a border pixel is found
-        mov al, es:[di]
-        mov ah, al
-        xor al, dh          ; border_attr
-        and al, dl          ; video_bitmask
-        je @end_paint
-        ; Set the new pixel
-        mov al, graph_attr
-        xor al, ah
-        and al, dl          ; video_bitmask
-        or ch, al           ; nonzero if a pixel changed
-        xor al, ah
-        mov es:[di], al
-        ; Go to next pixel
-        cmp si, bp
-        jae @end_paint
-        inc si              ; x_coordinate
-        ror dl, cl
-        inc bx
-        jnc @paint
-            inc di
-    jmp @paint
-    @end_paint:
-
-    mov cl, ch          ; nonzero if any pixel changed
-    mov x_coordinate, si
-    mov video_pos, di
-    mov video_bitmask, dl
-    pop dx              ; remaining border pixel count
-
-@end:
-    pop es
-    pop bp
-    pop di
-    pop si
-    pop ax
-    ret
-
-mode_2_SCANR endp
-
-; Fill pixels to the left until the border color is found
-; On entry: Setup done with PNTINI
-; Returns:  Start painting one pixel left of current position
-;           BX = number of pixels painted
-;           CL != 0 if at least one pixel changed
-;           Current position updated
-mode_2_SCANL proc near private
-
-    push ax
-    push dx
-    push si
-    push di
-    push es
-
-    mov cl, 1
-    les di, video_addr
-    mov dl, video_bitmask
-    mov dh, border_attr
-    mov si, x_coordinate
-    xor ch, ch
-    xor bx, bx
-
-    @paint:
-        ; Go to next pixel
-        rol dl, cl
-        jnc @F
-            dec di
-        @@:
-        dec si          ; x_coordinate
-        js @end_paint
-        ; End loop if a border pixel is found
-        mov al, es:[di]
-        mov ah, al
-        xor al, dh      ; border_attr
-        and al, dl      ; video_bitmask
-        je @end_paint
-        ; Set the new pixel
-        mov al, graph_attr
-        xor al, ah
-        and al, dl      ; video_bitmask
-        or ch, al       ; nonzero if a pixel changed
-        xor al, ah
-        cmp al, ah
-        mov es:[di], al
-        inc bx
-    jmp @paint
-    @end_paint:
-    ; Move back one pixel to the right
-    inc si              ; x_coordinate
-    ror dl, cl
-    jnc @F
-        inc di
-    @@:
-    mov cl, ch              ; At least one pixel changed
-    mov video_pos, di
-    mov video_bitmask, dl
-    mov x_coordinate, si
-
-    pop es
-    pop di
-    pop si
-    pop dx
-    pop ax
-    ret
-
-mode_2_SCANL endp
 
 ;-----------------------------------------------------------------------------
 ; Speaker support
