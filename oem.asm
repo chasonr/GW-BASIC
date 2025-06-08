@@ -985,21 +985,8 @@ SCRSTT proc near
         cmp ah, mode_table_size
         jae @error              ; invalid if outside of mode_table
         mov al, ah
-        xor ah, ah
-        mov di, ax
-        shl di, 1
-        mov di, mode_table[di]
-        or di, di
-        jz @error               ; or if mode_table has 0
-        ; Set up the mode
-        call cs:Screen_Mode.SCRSTT_init[di]
+        call set_screen_mode
         jc @error
-        mov mode_ptr, di
-        mov  al,text_width
-        mov  cl,25
-        call SCNSWI
-        call GRPINI
-        call SCNCLR
     @end_1:
 
     ; Parameter 2: color flag
@@ -1063,6 +1050,42 @@ SCRSTT proc near
     ret
 
 SCRSTT endp
+
+; On entry: AL = screen mode to set
+; Returns: C set if error
+;          if C clear: DI points to new mode table
+set_screen_mode proc near private
+
+        push cx
+        push di
+
+        xor ah, ah
+        mov di, ax
+        shl di, 1
+        mov di, mode_table[di]
+        or di, di
+        jz @error               ; or if mode_table has 0
+        ; Set up the mode
+        call cs:Screen_Mode.SCRSTT_init[di]
+        jc @error
+        mov mode_ptr, di
+        mov  al,text_width
+        mov  cl,25
+        call SCNSWI
+        call GRPINI
+        call SCNCLR
+        clc
+
+        pop cx ; Discard saved DI
+        pop cx
+        ret
+
+@error:
+        pop di
+        pop cx
+        ret
+
+set_screen_mode endp
 
 ; Print a character to the screen
 ; On entry:
@@ -2733,9 +2756,23 @@ mode_1_SETCLR endp
 ; Returns C set if error
 mode_1_SWIDTH proc near private
 
-    ; TODO: this will switch to mode 2, but first we need mode 2 implemented
-    stc
-    ret
+    cmp AL, 80
+    je @80_columns
+    cmp AL, 40
+    je @40_columns
+        ; anything else is an error
+        stc
+        ret
+
+    @40_columns:
+        clc
+        ret
+
+    @80_columns:
+        ; Switch to mode 2
+        mov al, 2
+        call set_screen_mode
+        ret
 
 mode_1_SWIDTH endp
 
@@ -3772,9 +3809,23 @@ mode_2_SETCLR endp
 ; Returns C set if error
 mode_2_SWIDTH proc near private
 
-    ; TODO: this will switch to mode 1
-    stc
-    ret
+    cmp AL, 80
+    je @80_columns
+    cmp AL, 40
+    je @40_columns
+        ; anything else is an error
+        stc
+        ret
+
+    @40_columns:
+        ; Switch to mode 1
+        mov al, 1
+        call set_screen_mode
+        ret
+
+    @80_columns:
+        clc
+        ret
 
 mode_2_SWIDTH endp
 
