@@ -853,7 +853,7 @@ screen_mode_1 label word
     dw cga_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
-    dw generic_CSRDSP         ; CSRDSP_handler
+    dw cga_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw mode_1_SETCLR          ; SETCLR_handler
@@ -902,7 +902,7 @@ screen_mode_2 label word
     dw cga_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
-    dw generic_CSRDSP         ; CSRDSP_handler
+    dw cga_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw mode_2_SETCLR          ; SETCLR_handler
@@ -2446,6 +2446,7 @@ mode_1_SCRSTT_init proc near private
 
     ; We're good.
     mov text_width, 40
+    mov cursor_pos, 0FFFFh
     clc
     ret
 
@@ -2518,6 +2519,8 @@ cga_CLRSCN proc near
         mov cx, dx
         rep stosw   ; clear the odd lines
 
+        mov cursor_pos, 0FFFFh
+
         call SCNCLR
         call GRPINI
 
@@ -2532,6 +2535,155 @@ cga_CLRSCN proc near
     ret
 
 cga_CLRSCN endp
+
+; On entry: AL = cursor type
+;                0 = off
+;                1 = insert mode (larger)
+;                2 = overwrite mode (smaller)
+;                3 = user mode
+;           DX = cursor position: 1-based (column, row)
+;                It is uncertain that DX is set
+; Returns: none
+; Modes 1 and 2 both use this
+cga_CSRDSP proc near private
+
+    push ax
+    push bx
+    push dx
+    push si
+    push es
+
+    ; Set BX to flip one byte
+    mov bx, 00FFh
+
+    ; Develop the address of the text cell
+    push ax
+    xchg dh, dl
+    dec dl  ; 0-based column
+    dec dh  ; 0-based row
+    ; DL to byte offset
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    je @F
+        ; Mode 1
+        shl dl, 1
+        ; Flip two bytes
+        mov bx, 0FFFFh
+    @@:
+
+    ; AX <- DH * 320
+    mov al, 160
+    mul dh
+    shl ax, 1
+    xor dh, dh
+    add ax, dx
+    mov si, ax  ; SI = address
+    pop ax
+    mov es, video_seg
+
+    ; Remove any existing cursor
+    call cga_cursor_off
+
+    cmp al, 0
+    je @end
+
+        ; Set the cursor shape
+        cmp al, 1
+        jne @two
+            mov ax, 0007h
+            jmp @on
+        @two:
+        cmp al, 2
+        jne @three
+            mov ax, 0607h
+            jmp @on
+        @three:
+            mov ax, cursor_shape
+        @on:
+
+        ; Display the new cursor
+        call cga_cursor_flip
+        mov cursor_pos, si
+        mov cursor_state, ax
+
+    @end:
+
+    pop es
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+cga_CSRDSP endp
+
+; Turn off the cursor
+cga_cursor_off proc near private
+
+    cmp cursor_pos, 0FFFFh
+    je @end ; it isn't already off
+        push ax
+        push si
+        push es
+
+        mov es, video_seg
+        mov si, cursor_pos
+        mov ax, cursor_state
+        call cga_cursor_flip
+
+        pop es
+        pop si
+        pop ax
+        mov cursor_pos, 0FFFFh
+    @end:
+
+    ret
+
+cga_cursor_off endp
+
+; Reverse the area of text that the cursor occupies
+; On entry: AH = start line; AL = end_line
+;           ES:SI = address of line 0 of the text cell
+;           BX = FFFF for mode 1, 00FF for mode 2
+cga_cursor_flip proc near private
+
+    push cx
+    push si
+
+    mov cl, 0
+    @flip:
+
+        ; Flip even line
+        cmp cl, ah
+        jb @F
+        cmp cl, al
+        ja @F
+            xor word ptr es:[si], bx
+        @@:
+        inc cl
+
+        ; Advance to odd line
+        add si, 2000h
+
+        ; Flip odd line
+        cmp cl, ah
+        jb @F
+        cmp cl, al
+        ja @F
+            xor word ptr es:[si], bx
+        @@:
+        inc cl
+
+        ; Advance to even line
+        sub si, 2000h - 80
+
+    cmp cl, 8
+    jb @flip
+
+    pop si
+    pop cx
+    ret
+
+cga_cursor_flip endp
 
 ; Set up configured colors
 ; On entry: BL != 0 if parameter 1 specified
@@ -3933,6 +4085,9 @@ text_width db ?
 
 ; Shape of text cursor set by CSRDSP
 cursor_shape dw 0B0Dh ; Initially in overwrite mode
+; For graphical modes
+cursor_state dw ?
+cursor_pos dw ?
 
 ; Colors set by SETFBC and SETCLR and returned by GETFBC
 foreground_color db 7
