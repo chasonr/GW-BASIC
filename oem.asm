@@ -782,13 +782,24 @@ Screen_Mode struc
     height_width   dw ? ; Pixel height over pixel width as 8.8 fixed
     num_pages      db ? ; Number of supported pages
     pixel_size     db ? ; Number of bits per pixel
+    bios_mode      db ? ; BIOS video mode
 Screen_Mode ends
 
 ; Table of supported screen modes
 mode_table label word
-    dw offset screen_mode_0
-    dw offset screen_mode_1
-    dw offset screen_mode_2
+    dw offset screen_mode_0  ; 40x25 or 80x25 text
+    dw offset screen_mode_1  ; CGA 320x200, 4 colors
+    dw offset screen_mode_2  ; CGA 640x200, 2 colors
+    dw 0                     ; Hercules 720x348, 2 colors
+    dw 0                     ; Olivetti; properties unknown
+    dw 0                     ; undefined
+    dw 0                     ; undefined
+    dw offset screen_mode_7  ; EGA 320x200, 16 colors
+    dw offset screen_mode_8  ; EGA 640x200, 16 colors
+    dw offset screen_mode_9  ; EGA 640x350, 16 colors
+    dw 0                     ; EGA 640x350, monochrome
+    dw 0                     ; VGA 640x480, monochrome
+    dw offset screen_mode_12 ; VGA 640x480, 16 colors
 mode_table_size = ($ - mode_table)/2
 
 ; JWASM complains that the literal is too long if I try to use a structure.
@@ -841,6 +852,7 @@ screen_mode_0 label word
     dw 0100h                  ; height_width
     db 8                      ; num_pages
     db 0                      ; pixel_size
+    db 3                      ; bios_mode (actually 0-3 or 7)
 
 screen_mode_1 label word
     dw mode_1_SCRSTT_init     ; SCRSTT_init
@@ -890,6 +902,7 @@ screen_mode_1 label word
     dw 0133h                  ; height_width (1.200)
     db 1                      ; num_pages
     db 2                      ; pixel_size
+    db 5                      ; bios_mode (actually 4 or 5)
 
 screen_mode_2 label word
     dw mode_2_SCRSTT_init     ; SCRSTT_init
@@ -939,6 +952,207 @@ screen_mode_2 label word
     dw 0266h                  ; height_width (2.4000)
     db 1                      ; num_pages
     db 1                      ; pixel_size
+    db 6                      ; bios_mode
+
+screen_mode_7 label word
+    dw ega_SCRSTT_init        ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw ega_SCROUT             ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_CLRSCN             ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw ega_CSRDSP             ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw ega_SETCLR             ; SETCLR_handler
+    dw ega_SWIDTH_80          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw ega_SETFBC             ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw ega_STOREC             ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw ega_UPC                ; UPC_handler
+    dw ega_DOWNC              ; DOWNC_handler
+    dw ega_LEFTC              ; LEFTC_handler
+    dw ega_RIGHTC             ; RIGHTC_handler
+    dw ega_MAPXYC             ; MAPXYC_handler
+    dw ega_SETATR             ; SETATR_handler
+    dw ega_READC              ; READC_handler
+    dw ega_SETC               ; SETC_handler
+    dw ega_NSETCX             ; NSETCX_handler
+    dw ega_PGINIT             ; PGINIT_handler
+    dw ega_NREAD              ; NREAD_handler
+    dw ega_NWRITE             ; NWRITE_handler
+    dw ega_PNTINI             ; PNTINI_handler
+    dw ega_TDOWNC             ; TDOWNC_handler
+    dw ega_TUPC               ; TUPC_handler
+    dw ega_SCANR              ; SCANR_handler
+    dw ega_SCANL              ; SCANL_handler
+    db 40                     ; text_columns
+    db 25                     ; text_rows
+    dw 320                    ; x_res
+    dw 200                    ; y_res
+    dw 00D5h                  ; width_height (0.833)
+    dw 0133h                  ; height_width (1.200)
+    db 1                      ; num_pages
+    db 4                      ; pixel_size
+    db 0Dh                    ; bios_mode
+
+screen_mode_8 label word
+    dw ega_SCRSTT_init        ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw ega_SCROUT             ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_CLRSCN             ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw ega_CSRDSP             ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw ega_SETCLR             ; SETCLR_handler
+    dw ega_SWIDTH_40          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw ega_SETFBC             ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw ega_STOREC             ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw ega_UPC                ; UPC_handler
+    dw ega_DOWNC              ; DOWNC_handler
+    dw ega_LEFTC              ; LEFTC_handler
+    dw ega_RIGHTC             ; RIGHTC_handler
+    dw ega_MAPXYC             ; MAPXYC_handler
+    dw ega_SETATR             ; SETATR_handler
+    dw ega_READC              ; READC_handler
+    dw ega_SETC               ; SETC_handler
+    dw ega_NSETCX             ; NSETCX_handler
+    dw ega_PGINIT             ; PGINIT_handler
+    dw ega_NREAD              ; NREAD_handler
+    dw ega_NWRITE             ; NWRITE_handler
+    dw ega_PNTINI             ; PNTINI_handler
+    dw ega_TDOWNC             ; TDOWNC_handler
+    dw ega_TUPC               ; TUPC_handler
+    dw ega_SCANR              ; SCANR_handler
+    dw ega_SCANL              ; SCANL_handler
+    db 80                     ; text_columns
+    db 25                     ; text_rows
+    dw 640                    ; x_res
+    dw 200                    ; y_res
+    dw 006Bh                  ; width_height (0.4167)
+    dw 0266h                  ; height_width (2.4000)
+    db 1                      ; num_pages
+    db 4                      ; pixel_size
+    db 0Eh                    ; bios_mode
+
+screen_mode_9 label word
+    dw ega_SCRSTT_init        ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw ega_SCROUT             ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_CLRSCN             ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw ega_CSRDSP             ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw ega_SETCLR             ; SETCLR_handler
+    dw ega_SWIDTH_40          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw ega_SETFBC             ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw ega_STOREC             ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw ega_UPC                ; UPC_handler
+    dw ega_DOWNC              ; DOWNC_handler
+    dw ega_LEFTC              ; LEFTC_handler
+    dw ega_RIGHTC             ; RIGHTC_handler
+    dw ega_MAPXYC             ; MAPXYC_handler
+    dw ega_SETATR             ; SETATR_handler
+    dw ega_READC              ; READC_handler
+    dw ega_SETC               ; SETC_handler
+    dw ega_NSETCX             ; NSETCX_handler
+    dw ega_PGINIT             ; PGINIT_handler
+    dw ega_NREAD              ; NREAD_handler
+    dw ega_NWRITE             ; NWRITE_handler
+    dw ega_PNTINI             ; PNTINI_handler
+    dw ega_TDOWNC             ; TDOWNC_handler
+    dw ega_TUPC               ; TUPC_handler
+    dw ega_SCANR              ; SCANR_handler
+    dw ega_SCANL              ; SCANL_handler
+    db 80                     ; text_columns
+    db 25                     ; text_rows
+    dw 640                    ; x_res
+    dw 350                    ; y_res
+    dw 00BBh                  ; width_height (0.729)
+    dw 015Fh                  ; height_width (1.200)
+    db 1                      ; num_pages
+    db 4                      ; pixel_size
+    db 10h                    ; bios_mode
+
+screen_mode_12 label word
+    dw ega_SCRSTT_init        ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw ega_SCROUT             ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_CLRSCN             ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw ega_CSRDSP             ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw ega_SETCLR             ; SETCLR_handler
+    dw ega_SWIDTH_40          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw ega_SETFBC             ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw ega_STOREC             ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw ega_UPC                ; UPC_handler
+    dw ega_DOWNC              ; DOWNC_handler
+    dw ega_LEFTC              ; LEFTC_handler
+    dw ega_RIGHTC             ; RIGHTC_handler
+    dw ega_MAPXYC             ; MAPXYC_handler
+    dw ega_SETATR             ; SETATR_handler
+    dw ega_READC              ; READC_handler
+    dw ega_SETC               ; SETC_handler
+    dw ega_NSETCX             ; NSETCX_handler
+    dw ega_PGINIT             ; PGINIT_handler
+    dw ega_NREAD              ; NREAD_handler
+    dw ega_NWRITE             ; NWRITE_handler
+    dw ega_PNTINI             ; PNTINI_handler
+    dw ega_TDOWNC             ; TDOWNC_handler
+    dw ega_TUPC               ; TUPC_handler
+    dw ega_SCANR              ; SCANR_handler
+    dw ega_SCANL              ; SCANL_handler
+    db 80                     ; text_columns
+    db 30                     ; text_rows
+    dw 640                    ; x_res
+    dw 480                    ; y_res
+    dw 0100h                  ; width_height (1.0)
+    dw 0100h                  ; height_width (1.0)
+    db 1                      ; num_pages
+    db 4                      ; pixel_size
+    db 12h                    ; bios_mode
 
 ; Most functions will use this macro to select the correct handler
 dispatch macro handler
@@ -1056,34 +1270,35 @@ SCRSTT endp
 ;          if C clear: DI points to new mode table
 set_screen_mode proc near private
 
-        push cx
-        push di
+    push cx
+    push di
 
-        xor ah, ah
-        mov di, ax
-        shl di, 1
-        mov di, mode_table[di]
-        or di, di
-        jz @error               ; or if mode_table has 0
-        ; Set up the mode
-        call cs:Screen_Mode.SCRSTT_init[di]
-        jc @error
-        mov mode_ptr, di
-        mov  al,text_width
-        mov  cl,25
-        call SCNSWI
-        call GRPINI
-        call SCNCLR
-        clc
+    xor ah, ah
+    mov di, ax
+    shl di, 1
+    mov di, mode_table[di]
+    or di, di
+    jz @error               ; or if mode_table has 0
+    ; Set up the mode
+    call cs:Screen_Mode.SCRSTT_init[di]
+    jc @error
+    mov mode_ptr, di
+    mov  al,text_width
+    mov  cl,25
+    call SCNSWI
+    call GRPINI
+    call SCNCLR
+    clc
 
-        pop cx ; Discard saved DI
-        pop cx
-        ret
+    pop cx ; Discard saved DI
+    pop cx
+    ret
 
 @error:
-        pop di
-        pop cx
-        ret
+    pop di
+    pop cx
+    stc
+    ret
 
 set_screen_mode endp
 
@@ -1717,7 +1932,7 @@ generic_SCROUT proc near private
     call set_cursor
     mov ah, 09h
     mov bh, 0
-    mov bl, 07h
+    mov bl, text_attr
     mov cx, 1
     int 10h
     pop dx
@@ -2159,6 +2374,9 @@ mode_0_SCRSTT_init proc near private
         int 10h
         mov text_width, 80
     @end:
+    mov foreground_color, 7
+    mov background_color, 0
+    call mode_0_set_text_attr
 
     pop cx
     pop bx
@@ -2469,7 +2687,9 @@ mode_1_SCRSTT_init proc near private
 
     ; We're good.
     mov text_width, 40
+    mov text_attr, 3
     mov cursor_pos, 0FFFFh
+    mov video_seg, 0B800h
     clc
     ret
 
@@ -2515,7 +2735,7 @@ mode_1_SCRSTT_color endp
 ; Returns:  C clear if screen cleared
 ;           SCNCLR and GRPINI called
 ; Modes 1 and 2 both use this
-cga_CLRSCN proc near
+cga_CLRSCN proc near private
 
     cmp al, 0
     stc
@@ -2781,7 +3001,6 @@ mode_1_SWIDTH endp
 ; Returns: none
 mode_1_SETFBC proc near private
 
-    call mode_0_set_text_attr
     ret
 
 mode_1_SETFBC endp
@@ -3209,12 +3428,6 @@ cga_PGINIT proc near private
 
     mov blit_addr, bx
     mov blit_bits, cx
-    add cx, 7
-    shr cx, 1
-    shr cx, 1
-    shr cx, 1
-    mov blit_bytes, cx
-    mov cx, blit_bits
     jnc @F
         push ax
         push bx
@@ -3226,6 +3439,12 @@ cga_PGINIT proc near private
         pop bx
         pop ax
     @@:
+    add cx, 7
+    shr cx, 1
+    shr cx, 1
+    shr cx, 1
+    mov blit_bytes, cx
+    mov cx, blit_bits
     ret
 
 cga_PGINIT endp
@@ -3763,6 +3982,8 @@ mode_2_SCRSTT_init proc near private
 
     ; We're good.
     mov text_width, 80
+    mov text_attr, 1
+    mov video_seg, 0B800h
     clc
     ret
 
@@ -3856,6 +4077,1451 @@ mode_2_PNTINI proc near private
     ret
 
 mode_2_PNTINI endp
+
+;-----------------------------------------------------------------------------
+; Screen mode  7: EGA 320x200, 16 colors
+; Screen mode  8: EGA 640x200, 16 colors
+; Screen mode  9: EGA 640x350, 16 colors
+; Screen mode 10: EGA 640x350, monochrome
+; Screen mode 11: VGA 640x480, monochrome
+; Screen mode 12: VGA 640x480, 16 colors
+;-----------------------------------------------------------------------------
+
+; Macro to set an indexed EGA/VGA register
+; This overwrites AL and DX
+write_ega_reg macro port, index, value
+    mov dx, port
+    mov al, index
+    out dx, al
+    jmp short $+2
+    inc dx
+    mov al, value
+    out dx, al
+    jmp short $+2
+endm
+
+; Macro to read an indexed EGA/VGA register
+; This overwrites AL and DX
+read_ega_reg macro port, index
+    mov dx, port
+    mov al, index
+    out dx, al
+    jmp $+2
+    inc dx
+    in al, dx
+    jmp $+2
+endm
+
+; Set an EGA/VGA planar mode
+ega_SCRSTT_init proc near private
+
+    ; Set the correct BIOS mode
+    mov al, cs:Screen_Mode.bios_mode[di]
+    mov ah, 00h
+    int 10h
+
+    ; Did it work?
+    push bx
+    mov ah, 0Fh
+    int 10h
+    pop bx
+    cmp al, cs:Screen_Mode.bios_mode[di]
+    jne @error
+
+    ; We're good.
+    mov al, cs:Screen_Mode.text_columns[di]
+    mov text_width, al
+    mov cursor_pos, 0FFFFh
+    mov video_seg, 0A000h
+    mov text_attr, 15
+    ; Select read mode 0 and write mode 0
+    push dx
+    write_ega_reg 03CEh, 5, 0
+    pop dx
+    mov ega_set_pixel, 1
+    clc
+    ret
+
+    ; Oops.
+    @error:
+    stc
+    ret
+
+ega_SCRSTT_init endp
+
+; Print a character to the screen
+; On entry:
+;     AL = character
+;     DH = column (1 left)
+;     DL = row (1 top)
+; Returns C clear for success
+; No caller checks the C flag
+ega_SCROUT proc near private
+
+    mov ega_set_pixel, 1
+    jmp generic_SCROUT
+
+ega_SCROUT endp
+
+; Clear the screen or the text window
+; On entry: If the CLS statement has a parameter, C is set and the parameter
+;           is in AL.
+;           Otherwise, C is clear and AL is 0.
+; Returns:  C clear if screen cleared
+;           SCNCLR and GRPINI called
+ega_CLRSCN proc near private
+
+    cmp al, 0
+    stc
+    jne @end
+
+        push ax
+        push cx
+        push dx
+        push es
+
+        write_ega_reg 03CEh, 1, 0       ; No set/reset
+        write_ega_reg 03CEh, 3, 000o    ; replace operation, 0 bits rotation
+        write_ega_reg 03CEh, 8, 0FFh    ; Write all bits
+        write_ega_reg 03C4h, 2, 0Fh     ; Write all planes
+
+        ; Determine the size to fill
+        mov ax, cs:Screen_Mode.x_res[di]
+        mov cl, 4
+        shr ax, cl
+        mul cs:Screen_Mode.y_res[di]
+        mov cx, ax
+
+        ; Fill
+        mov es, video_seg
+        xor di, di
+        xor ax, ax
+        cld
+        rep stosw
+
+        mov cursor_pos, 0FFFFh
+
+        call SCNCLR
+        call GRPINI
+        mov ega_set_pixel, 1
+
+        pop es
+        pop dx
+        pop cx
+        pop ax
+
+        clc
+
+    @end:
+    ret
+
+ega_CLRSCN endp
+
+; On entry: AL = cursor type
+;                0 = off
+;                1 = insert mode (larger)
+;                2 = overwrite mode (smaller)
+;                3 = user mode
+;           DX = cursor position: 1-based (column, row)
+;                It is uncertain that DX is set
+; Returns: none
+ega_CSRDSP proc near private
+
+    push ax
+    push bx
+    push dx
+    push si
+    push es
+
+    ; Get the font height
+    ; TODO: This should be configurable
+    mov bx, cs:Screen_Mode.y_res[di]
+    cmp bx, 350
+    jae @14_line
+        mov bl, 8
+    jmp @end_line
+    @14_line:
+    cmp bx, 400
+    jae @16_line
+        mov bl, 14
+    jmp @end_line
+    @16_line:
+        mov bl, 16
+    @end_line:
+
+    ; Develop the address of the text cell
+    push ax
+    xchg dh, dl
+    dec dl  ; 0-based column
+    dec dh  ; 0-based row
+    mov ax, cs:Screen_Mode.x_res[di] ; AL <- x_res/8
+    shr ax, 1
+    shr ax, 1
+    shr ax, 1
+    mul dh
+    xor dh, dh
+    mov si, dx
+    xor bh, bh
+    mul bx
+    add si, ax  ; SI = address
+    mov es, video_seg
+
+    ; Set up EGA registers for XOR operation
+    write_ega_reg 03CEh, 1, 0       ; No set/reset
+    write_ega_reg 03CEh, 3, 030o    ; XOR operation, 0 bits rotation
+    write_ega_reg 03CEh, 8, 0FFh    ; Write all bits
+    write_ega_reg 03C4h, 2, 0Fh     ; Write all planes
+    mov ega_set_pixel, 1
+
+    ; Remove any existing cursor
+    call ega_cursor_off
+
+    pop ax
+    cmp al, 0
+    je @end
+
+        ; Set the cursor shape
+        cmp al, 1
+        jne @two
+            mov ah, 0
+            mov al, bl
+            dec al
+            jmp @on
+        @two:
+        cmp al, 2
+        jne @three
+            mov al, bl
+            dec al
+            mov ah, al
+            dec ah
+            jmp @on
+        @three:
+            mov ax, cursor_shape
+        @on:
+
+        ; Display the new cursor
+        call ega_cursor_flip
+        mov cursor_pos, si
+        mov cursor_state, ax
+
+    @end:
+
+    pop es
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+ega_CSRDSP endp
+
+; Turn off the cursor
+ega_cursor_off proc near private
+
+    cmp cursor_pos, 0FFFFh
+    je @end ; it isn't already off
+        push ax
+        push si
+        push es
+
+        mov es, video_seg
+        mov si, cursor_pos
+        mov ax, cursor_state
+        call ega_cursor_flip
+
+        pop es
+        pop si
+        pop ax
+        mov cursor_pos, 0FFFFh
+    @end:
+
+    ret
+
+ega_cursor_off endp
+
+; Reverse the area of text that the cursor occupies
+; On entry: AH = start line; AL = end_line
+;           ES:SI = address of line 0 of the text cell
+;           BL = height of character cell
+;           DI = address of Screen_Mode block
+;           EGA registers configured for XOR operation
+ega_cursor_flip proc near private
+
+    push cx
+    push dx
+    push si
+
+    ; DX <- x_res/8
+    mov dx, cs:Screen_Mode.x_res[di]
+    shr dx, 1
+    shr dx, 1
+    shr dx, 1
+
+    mov ch, 0
+    @flip:
+
+        ; Flip line
+        cmp ch, ah
+        jb @F
+        cmp ch, al
+        ja @F
+            mov bh, es:[si] ; Fill the latch register
+            mov byte ptr es:[si], 0FFh
+        @@:
+        inc ch
+
+        ; Advance to next line
+        add si, dx
+
+    cmp ch, bl
+    jb @flip
+
+    pop si
+    pop dx
+    pop cx
+    ret
+
+ega_cursor_flip endp
+
+; Set up configured colors
+; On entry: BL != 0 if parameter 1 specified
+;           BH contains parameter 1
+;           CL != 0 if parameter 2 specified
+;           CH contains parameter 1
+;           DL != 0 if parameter 3 specified
+;           DH contains parameter 3
+; Returns: C set if error
+ega_SETCLR proc near
+
+    or bl, bl
+    je @F
+        ; Can't use COLOR 0 because the on-screen editor doesn't work
+        and bh, 0Fh
+        je @error
+
+        mov foreground_color, bh
+        mov text_attr, bh
+    @@:
+
+    or cl, cl
+    je @F
+        ; Background color
+        push ax
+        push bx
+        mov bl, ch
+        mov bh, 0
+        mov ah, 0Bh
+        int 10h
+        pop bx
+        pop ax
+    @@:
+
+    clc
+    ret
+
+    @error:
+    stc
+    ret
+
+ega_SETCLR endp
+
+; Set screen width in columns
+; On entry: AL = number of requested columns
+; Returns C set if error
+ega_SWIDTH_80 proc near
+
+    cmp AL, 80
+    je @80_columns
+    cmp AL, 40
+    je @40_columns
+        ; anything else is an error
+        stc
+        ret
+
+    @40_columns:
+        clc
+        ret
+
+    @80_columns:
+        ; Switch to mode 8
+        mov al, 8
+        call set_screen_mode
+        ret
+
+ega_SWIDTH_80 endp
+
+; Set screen width in columns
+; On entry: AL = number of requested columns
+; Returns C set if error
+ega_SWIDTH_40 proc near
+
+    cmp AL, 80
+    je @80_columns
+    cmp AL, 40
+    je @40_columns
+        ; anything else is an error
+        stc
+        ret
+
+    @40_columns:
+        ; Switch to mode 7
+        mov al, 7
+        call set_screen_mode
+        ret
+
+    @80_columns:
+        clc
+        ret
+
+ega_SWIDTH_40 endp
+
+; Set foreground and background colors
+; On entry: foreground_color and background_color set
+; Returns: none
+ega_SETFBC proc near private
+
+    ret
+
+ega_SETFBC endp
+
+; Set a cursor position retrieved from FETCHC
+; On entry: AL:BX = cursor position
+; Returns:  none
+ega_STOREC proc near
+
+    push ax
+    push dx
+
+    mov video_pos, bx
+    mov video_bitmask, al
+
+    ; Recover the X coordinate
+    mov ax, bx
+    mov bx, cs:Screen_Mode.x_res[di]
+    shr bx, 1
+    shr bx, 1
+    shr bx, 1
+    xor dx, dx
+    div bx        ; remainder to DX
+    shl dx, 1     ; convert to pixel coordinate
+    shl dx, 1
+    shl dx, 1
+    mov al, video_bitmask
+    test al, 0Fh  ; get the lower three bits
+    je @F
+        or dx, 4
+    @@:
+    test al, 33h
+    je @F
+        or dx, 2
+    @@:
+    test al, 55h
+    je @F
+        or dx, 1
+    @@:
+
+    mov x_coordinate, dx
+
+    pop dx
+    pop ax
+    ret
+
+ega_STOREC endp
+
+; Move one pixel up
+; On entry: none
+; Returns   none
+ega_UPC proc near
+
+    push ax
+    mov ax, cs:Screen_Mode.x_res[di]
+    shr ax, 1
+    shr ax, 1
+    shr ax, 1
+    sub video_pos, ax
+    pop ax
+    ret
+
+ega_UPC endp
+
+; Move one pixel down
+; On entry: none
+; Returns   none
+ega_DOWNC proc near
+
+    push ax
+    mov ax, cs:Screen_Mode.x_res[di]
+    shr ax, 1
+    shr ax, 1
+    shr ax, 1
+    add video_pos, ax
+    pop ax
+    ret
+
+ega_DOWNC endp
+
+; Move one pixel left
+; On entry: none
+; Returns   none
+ega_LEFTC proc near
+
+    ; Shift the bit mask left
+    rol video_bitmask, 1
+
+    ; Carry into the address
+    jnc @F
+        dec video_pos
+    @@:
+
+    ret
+
+ega_LEFTC endp
+
+; Move one pixel right
+; On entry: none
+; Returns   none
+ega_RIGHTC proc near
+
+    ; Shift the bit mask right
+    ror video_bitmask, 1
+
+    ; Carry into the address
+    jnc @F
+        inc video_pos
+    @@:
+
+    ret
+
+ega_RIGHTC endp
+
+; Map pixel coordinates to a cursor position as returned by FETCHC
+; On entry: CX = X coordinate
+;           DX = Y coordinate
+; Returns: none
+ega_MAPXYC proc near
+ 
+    push ax
+    push bx
+    push cx
+    push dx ; MUL clobbers DX
+
+    mov x_coordinate, cx
+
+    ; Separate the bit mask from the byte position
+    mov bx, cx
+    and cl, 07h
+    mov al, 80h
+    shr al, cl
+    mov video_bitmask, al
+    mov cl, 3
+    shr bx, cl
+
+    ; AX <- x_res/8
+    mov ax, cs:Screen_Mode.x_res[di]
+    shr ax, cl
+
+    ; video_pos <- AX*y + x/8
+    mul dx
+    add ax, bx
+    mov video_pos, ax
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+ 
+ega_MAPXYC endp
+
+; Set the pixel attribute to be drawn
+; On entry: AL = attribute
+; Returns:  C set if error
+ega_SETATR proc near private
+
+    mov graph_attr, al
+    mov ega_set_pixel, 1
+    clc
+    ret
+
+ega_SETATR endp
+
+ega_set_attr proc near private
+
+    cmp ega_set_pixel, 0
+    je @end
+        ; SETC will use the bit mask register 03CE[8] to select the pixels to write.
+        ; Any write will then replace the pixels with the configured values.
+        write_ega_reg 03CEh, 0, graph_attr ; Set/reset the selected attribute
+        write_ega_reg 03CEh, 1, 0Fh        ; Set/reset all planes
+        write_ega_reg 03CEh, 3, 000o       ; Replace operation, 0 bits rotation
+        write_ega_reg 03C4h, 2, 0Fh        ; Write all planes
+        mov ega_set_pixel, 0
+    @end:
+    ret
+
+ega_set_attr endp
+
+; Read pixel at current position
+; Returns: AL = pixel attribute
+ega_READC proc near
+
+    push ax
+    push cx
+    push dx ; write_ega_reg uses DX
+    push es
+
+    les si, video_addr
+    mov ch, video_bitmask
+    xor al, al              ; Build the pixel here
+
+    ; Read the bit from each plane
+    mov cl, 3
+    @read:
+        write_ega_reg 03CEh, 4, cl  ; Read select register
+        mov ah, es:[si]             ; Read the plane
+        and ah, ch                  ; Isolate the bit
+        or al, ah                   ; Assemble with other planes
+        rol al, 1
+    dec cl
+    jns @read
+
+    ; Shift the bits into place
+    mov cx, x_coordinate
+    and cl, 07h
+    rol al, cl
+
+    pop es
+    pop dx
+    pop cx
+    pop ax
+    ret
+
+ega_READC endp
+
+; Write pixel at current location, using current attribute
+; Returns: none
+ega_SETC proc near
+
+    push ax
+    push dx
+    push di
+    push es
+
+    ; Set up color registers if needed
+    call ega_set_attr
+
+    ; Set bit mask register
+    write_ega_reg 03CEh, 8, video_bitmask
+
+    ; Write the pixel
+    les di, video_addr
+    mov al, es:[di]
+    mov es:[di], al
+
+    pop es
+    pop di
+    pop dx
+    pop ax
+    ret
+
+ega_SETC endp
+
+; Write multiple pixels starting at current position and proceeding right
+; On entry: BX = pixel count
+; Returns:  none
+ega_NSETCX proc near
+
+    push ax
+    push bx
+    push cx
+    push dx ; write_ega_reg uses DX
+    push bp
+    push si
+    push di
+    push es
+
+    cld
+
+    ; Set up color registers if needed
+    call ega_set_attr
+
+    ; Start and end of draw
+    mov bp, x_coordinate
+    add bx, bp
+    cmp bx, cs:Screen_Mode.x_res[di]
+    jb @F
+        mov bx, cs:Screen_Mode.x_res[di]
+    @@:
+    dec bx
+
+    ; Does the draw cross a byte boundary?
+    mov ax, bx
+    xor ax, bp
+    and ax, 0FFF8h
+    jnz @multibyte
+
+        ; Draw lies within a single byte
+        mov si, bp
+        and si, 07h
+        mov cl, left_mask_1[si]
+        mov si, bx
+        and si, 07h
+        and cl, right_mask_1[si] ; CL has 1 where bits will be replaced
+        write_ega_reg 03CEh, 8, cl
+        les di, video_addr
+        mov al, es:[di]         ; Set the latch register
+        stosb                   ; Write the pixels
+
+    jmp @end
+    @multibyte:
+
+        ; Draw spans two or more bytes
+        ; Draw the first byte
+        mov ch, graph_attr
+        les di, video_addr
+        mov si, bp
+        and si, 07h
+        write_ega_reg 03CEh, 8, left_mask_1[si]
+        mov al, es:[di]         ; Set the latch register
+        stosb                   ; Write the pixels
+
+        ; Draw zero or more whole bytes
+        write_ega_reg 03CEh, 8, 0FFh
+        mov si, bx      ; Save right partial byte for the end
+        and si, 07h
+        mov cl, 3
+        shr bx, cl
+        shr bp, cl
+        sub bx, bp
+        dec bx
+        je @end_whole
+            mov cx, bx
+            ; Because we're writing all pixels, we don't need to set the
+            ; latch register
+            rep stosb
+        @end_whole:
+
+        ; Draw the last byte
+        write_ega_reg 03CEh, 8, right_mask_1[si]
+        mov al, es:[di]         ; Set the latch register
+        stosb                   ; Write the pixels
+
+    @end:
+
+    pop es
+    pop di
+    pop si
+    pop bp
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+ega_NSETCX endp
+
+; Set up for bit-blit via NREAD or NWRITE
+; On entry: BX = pixel array
+;           CX = number of bits
+;           If C set:
+;           AL = index to a drawing routine (0-4)
+;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
+ega_PGINIT proc near
+
+    mov blit_addr, bx
+    mov blit_bits, cx
+    jnc @F
+        xor ah, ah
+        mov blit_mixer, ax
+    @@:
+    add cx, 7
+    shr cx, 1
+    shr cx, 1
+    shr cx, 1
+    mov blit_bytes, cx
+    mov cx, blit_bits
+    ret
+
+ega_PGINIT endp
+
+; Read a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          main memory address advanced to next line
+;          pixels read in packed form into main memory
+ega_NREAD proc near
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push bp
+    push si
+    push di
+    push es
+
+    cld
+
+    ; AX <- number of pixels to read
+    mov ax, blit_bits
+    shr ax, 1
+    shr ax, 1
+
+    ; BP <- number of bytes to read from each plane
+    mov bp, x_coordinate
+    and bp, 7               ; extra pixels on left
+    add bp, ax              ; total pixels to read
+    add bp, 7               ; round up to byte
+    shr bp, 1
+    shr bp, 1
+    shr bp, 1
+
+    ; The assumption here is that memory is fast and I/O ports are slow.
+    ; We read each plane into a separate byte array, which may be slightly
+    ; larger than the one provided by the caller, then shift and repack
+    ; them to fit into the caller's array.
+
+    ; First pass: copy four planes from the frame buffer
+    mov ax, ds                  ; ES:DI <- ega_repack
+    mov es, ax
+    mov di, offset ega_repack
+    lds bx, video_addr          ; DS:BX <- video_addr
+    mov ah, 3
+    assume es:DSEG, ds:nothing
+    @read_plane:
+        write_ega_reg 03CEh, 4, ah  ; Select the plane to read
+        mov si, bx
+        mov cx, bp
+        rep movsb               ; Read one plane
+    dec ah
+    jns @read_plane
+    mov ax, es                  ; Set DS back to DSEG again
+    mov ds, ax
+    assume ds:DSEG, es:nothing
+
+    ; Second pass: shift bytes in ega_repack so the requested pixel is
+    ; on the left
+    ; Shift as a single array, to keep it simple
+    mov cx, x_coordinate        ; CL <- shift count
+    and cl, 7
+    je @end_shift               ; Skip if shift is zero
+        mov dx, bp                  ; DX <- byte count
+        shl dx, 1
+        shl dx, 1
+        mov si, offset ega_repack   ; SI <- ega_repack
+        mov al, [si]                ; AL <- first byte
+        shl ax, cl                  ; Shift left
+        mov ch, al                  ; Carry out
+        dec dx                      ; Count off one byte (there are at least four)
+        @shift:
+            mov al,[si+1]               ; AL <- byte
+            xor ah, ah
+            shl ax, cl                  ; Shift left
+            or ah, ch                   ; Carry in
+            mov ch, al                  ; Carry out
+            mov [si], ah
+            inc si
+        dec dx
+        jns @shift
+    @end_shift:
+
+    ; Third pass: Repack the planes into separate pixels
+    mov dx, bp                  ; DX <- bytes per plane
+    mov si, offset ega_repack   ; SI <- ega_repack
+    @repack:
+        ; Read a byte from each plane
+        mov di, si
+        mov bh, [si]            ; Plane 3
+        add si, bp
+        mov bl, [si]            ; Plane 2
+        add si, bp
+        mov ch, [si]            ; Plane 1
+        add si, bp
+        mov cl, [si]            ; Plane 0
+        mov si, di
+
+        ; Repack
+        repeat 2
+            shl bh, 1
+            rcl al, 1
+            shl bl, 1
+            rcl al, 1
+            shl ch, 1
+            rcl al, 1
+            shl cl, 1
+            rcl al, 1
+        endm
+        mov [si], al            ; Pixels 0 and 1
+        add si, bp
+        repeat 2
+            shl bh, 1
+            rcl al, 1
+            shl bl, 1
+            rcl al, 1
+            shl ch, 1
+            rcl al, 1
+            shl cl, 1
+            rcl al, 1
+        endm
+        mov [si], al            ; Pixels 2 and 3
+        add si, bp
+        repeat 2
+            shl bh, 1
+            rcl al, 1
+            shl bl, 1
+            rcl al, 1
+            shl ch, 1
+            rcl al, 1
+            shl cl, 1
+            rcl al, 1
+        endm
+        mov [si], al            ; Pixels 4 and 5
+        add si, bp
+        repeat 2
+            shl bh, 1
+            rcl al, 1
+            shl bl, 1
+            rcl al, 1
+            shl ch, 1
+            rcl al, 1
+            shl cl, 1
+            rcl al, 1
+        endm
+        mov [si], al            ; Pixels 6 and 7
+        mov si, di
+
+    inc si
+    dec dx
+    jnz @repack
+
+    ; Fourth pass: Transfer to the caller's array
+    mov si, offset ega_repack
+    mov di, blit_addr
+    mov cx, blit_bytes
+    xor ah, ah
+    @output:
+        mov al, [si]
+        mov [di], al
+        add si, bp
+        inc di
+        inc ah
+        and ah, 3
+        jne @F
+            sub si, bp
+            sub si, bp
+            sub si, bp
+            sub si, bp
+            inc si
+        @@:
+    loop @output
+
+    ; Advance the local memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+ega_NREAD endp
+
+; Write a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          local memory address advanced to the next line
+ega_NWRITE proc near
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push bp
+    push si
+    push di
+    push es
+
+    cld
+
+    ; AX <- number of pixels to read
+    mov ax, blit_bits
+    shr ax, 1
+    shr ax, 1
+
+    ; BP <- number of bytes to read from each plane
+    mov bp, x_coordinate
+    and bp, 7               ; extra pixels on left
+    add bp, ax              ; total pixels to read
+    add bp, 7               ; round up to byte
+    shr bp, 1
+    shr bp, 1
+    shr bp, 1
+
+    ; First pass: Transfer from the caller's array
+    mov di, offset ega_repack
+    mov si, blit_addr
+    mov cx, blit_bytes
+    xor ah, ah
+    @input:
+        mov al, [si]
+        mov [di], al
+        add di, bp
+        inc si
+        inc ah
+        and ah, 3
+        jne @F
+            sub di, bp
+            sub di, bp
+            sub di, bp
+            sub di, bp
+            inc di
+        @@:
+    loop @input
+
+    ; Second pass: Repack the pixels into planes
+    mov dx, bp                  ; DX <- bytes per plane
+    mov si, offset ega_repack   ; SI <- ega_repack
+    @repack:
+        mov di, si
+
+        ; Repack
+        mov al, [si]            ; Pixels 0 and 1
+        repeat 2
+            shl al, 1
+            rcl bh, 1
+            shl al, 1
+            rcl bl, 1
+            shl al, 1
+            rcl ch, 1
+            shl al, 1
+            rcl cl, 1
+        endm
+        add si,bp
+        mov al, [si]            ; Pixels 2 and 3
+        repeat 2
+            shl al, 1
+            rcl bh, 1
+            shl al, 1
+            rcl bl, 1
+            shl al, 1
+            rcl ch, 1
+            shl al, 1
+            rcl cl, 1
+        endm
+        add si,bp
+        mov al, [si]            ; Pixels 4 and 5
+        repeat 2
+            shl al, 1
+            rcl bh, 1
+            shl al, 1
+            rcl bl, 1
+            shl al, 1
+            rcl ch, 1
+            shl al, 1
+            rcl cl, 1
+        endm
+        add si,bp
+        mov al, [si]            ; Pixels 6 and 7
+        repeat 2
+            shl al, 1
+            rcl bh, 1
+            shl al, 1
+            rcl bl, 1
+            shl al, 1
+            rcl ch, 1
+            shl al, 1
+            rcl cl, 1
+        endm
+        mov si, di
+
+        ; Write a byte from each plane
+        mov [si], bh            ; Plane 3
+        add si, bp
+        mov [si], bl            ; Plane 2
+        add si, bp
+        mov [si], ch            ; Plane 1
+        add si, bp
+        mov [si], cl            ; Plane 0
+        mov si, di
+
+    inc si
+    dec dx
+    jnz @repack
+
+    ; Third pass: shift bytes in ega_repack so the leftmost pixel aligns
+    ; with the X coordinate
+    ; Shift as a single array, to keep it simple
+    mov cx, x_coordinate        ; CL <- shift count
+    and cx, 7
+    je @end_shift               ; Skip if shift is zero
+        mov dx, bp                  ; DX <- byte count
+        shl dx, 1
+        shl dx, 1
+        mov si, offset ega_repack   ; SI <- ega_repack
+        @shift:
+            mov ah, [si]            ; AL <- byte
+            xor al, al
+            shr ax, cl              ; Shift right
+            or ah, ch               ; Carry in
+            mov ch, al              ; Carry out
+            mov [si], ah
+            inc si
+        dec dx
+        jnz @shift
+    @end_shift:
+
+    ; Fourth pass: Write bytes to the frame buffer
+    write_ega_reg 03CEh, 1, 0       ; No set/reset
+    write_ega_reg 03CEh, 3, 000o    ; replace operation, 0 bits rotation
+    mov si, x_coordinate
+    and si, 7
+    mov di, si
+    mov ax, blit_bits
+    shr ax, 1
+    shr ax, 1
+    add di, ax
+    dec di
+    cmp di, 7
+    jg @multibyte
+        ; Transfer a single byte
+        mov ah, left_mask_1[si]
+        and ah, right_mask_1[di]
+        write_ega_reg 03CEh, 8, ah  ; Write these bits
+        mov si, offset ega_repack
+        mov cl, 08h
+        les di, video_addr
+        @write_1:
+            write_ega_reg 03C4h, 2, cl  ; Write this plane
+            mov al, es:[di]         ; Set the latch register
+            mov al, [si]
+            mov es:[di], al
+            add si, bp
+        shr cl, 1
+        jnz @write_1
+    jmp @end_write
+    @multibyte:
+        ; Transfer two or more bytes
+        mov cl, 08h
+        mov bx, offset ega_repack
+        @write_2:
+            ; First partial byte
+            write_ega_reg 03C4h, 2, cl  ; Write this plane
+            mov si, x_coordinate
+            and si, 7
+            mov ah, left_mask_1[si]
+            write_ega_reg 03CEh, 8, ah
+            mov si, bx                  ; Start of this plane
+            les di, video_addr
+            mov al, es:[di]             ; Set the latch register
+            movsb
+            ; Zero or more complete bytes
+            write_ega_reg 03CEh, 8, 0FFh
+            mov dx, x_coordinate
+            and dx, 7
+            mov ax, blit_bits
+            shr ax, 1
+            shr ax, 1
+            add dx, ax
+            dec dx
+            shr dx, 1
+            shr dx, 1
+            shr dx, 1
+            dec dx
+            xchg cx, dx
+            jcxz @F
+                rep movsb
+            @@:
+            xchg cx, dx
+            ; Right partial byte
+            push di
+            mov di, x_coordinate
+            mov ax, blit_bits
+            shr ax, 1
+            shr ax, 1
+            add di, ax
+            dec di
+            and di, 7
+            mov ah, right_mask_1[di]
+            pop di
+            write_ega_reg 03CEh, 8, ah
+            mov al, es:[di]             ; Set the latch register
+            movsb
+        add bx, bp
+        shr cl, 1
+        jnz @write_2
+    @end_write:
+
+    ; Advance the local memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    pop es
+    pop bp
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+ega_NWRITE endp
+
+; Set up flood fill algorithm
+; On entry: AL = border attribute
+; Returns: C set if error
+ega_PNTINI proc near
+    int 3
+;RLC 
+;RLC     ; Duplicate lower two bits through the entire byte
+;RLC     push bx
+;RLC     and ax, 03h
+;RLC     mov bx, ax
+;RLC     mov al, bit_dup[bx]
+;RLC     pop bx
+;RLC     mov border_attr, al
+;RLC     clc
+;RLC     ret
+;RLC 
+ega_PNTINI endp
+
+; Move current position down with boundary check
+; Returns: C set if moving down would pass the bottom of the screen;
+;          the current position is unchanged in that case
+; This differs from DOWNC only in the boundary check
+ega_TDOWNC proc near
+
+    push ax
+    push bx
+    push dx
+
+    mov ax, cs:Screen_Mode.x_res[di]
+    shr ax, 1                       ; AX <- x_res/8
+    shr ax, 1
+    shr ax, 1
+    mov bx, ax                      ; BX <- x_res/8
+    mul cs:Screen_Mode.y_res[di]    ; AX <- (x_res/8)*y_res
+    add bx, video_pos               ; BX <- new position
+    cmp ax, bx                      ; Set C if off the bottom edge
+    jc @F
+        mov video_pos, bx
+    @@:
+
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+ega_TDOWNC endp
+
+; Move current position up with boundary check
+; Returns: C set if moving up would pass the top of the screen;
+;          the current position is unchanged in that case
+; This differs from UPC only in the boundary check
+ega_TUPC proc near
+
+    push ax
+    push bx
+    mov ax, cs:Screen_Mode.x_res[di]
+    shr ax, 1
+    shr ax, 1
+    shr ax, 1
+    mov bx, video_pos
+    sub bx, ax
+    jc @F
+        mov video_pos, bx
+    @@:
+    pop bx
+    pop ax
+    ret
+
+ega_TUPC endp
+
+; On entry: Setup done with PNTINI
+;           DX = number of border pixels to skip right
+;           No pixels are painted if this many pixels in the border color
+;           are found
+; Returns:  BX = number of pixels painted
+;           DX reduced by number of border pixels skipped
+;           CL != 0 if at least one pixel changed
+;           CSAVEA and CSAVEM set to the point where drawing began, in the
+;           format returned by FETCHC
+;           Current position updated
+ega_SCANR proc near
+    int 3
+;RLC 
+;RLC     push ax
+;RLC     push si
+;RLC     push di
+;RLC     push bp
+;RLC     push es
+;RLC 
+;RLC     ; Skip right
+;RLC     mov cl, cs:Screen_Mode.pixel_size[di]
+;RLC     cmp cl, 1
+;RLC     je @mode_2
+;RLC         ; Mode 1
+;RLC         mov bp, 319
+;RLC     jmp @end_mode
+;RLC     @mode_2:
+;RLC         ; Mode 2
+;RLC         mov bp, 639
+;RLC     @end_mode:
+;RLC     mov bx, dx
+;RLC     les di, video_addr
+;RLC     mov dh, border_attr
+;RLC     mov dl, video_bitmask
+;RLC     mov si, x_coordinate
+;RLC     cmp bx, 0
+;RLC     je @paint_not_found
+;RLC     @border_scan:
+;RLC         ; End loop if a non-border pixel is found
+;RLC         mov al, es:[di]
+;RLC         xor al, dh          ; border_attr
+;RLC         and al, dl          ; video_bitmask
+;RLC         jne @paint_found
+;RLC         ; Go to next pixel
+;RLC         cmp si, bp
+;RLC         jae @paint_not_found
+;RLC         inc si              ; x_coordinate
+;RLC         ror dl, cl
+;RLC         jnc @F
+;RLC             inc di
+;RLC         @@:
+;RLC     dec bx
+;RLC     jnz @border_scan
+;RLC     @paint_not_found:
+;RLC         ; No matching pixel found
+;RLC         mov video_bitmask, dl
+;RLC         mov video_pos, di
+;RLC         mov x_coordinate, si
+;RLC         xor bx, bx ; Nothing painted
+;RLC         xor cl, cl
+;RLC         xor dx, dx ; No border pixels remain
+;RLC         jmp @end
+;RLC 
+;RLC     @paint_found:
+;RLC 
+;RLC     ; Set position where drawing begins
+;RLC     mov CSAVEA, di
+;RLC     mov CSAVEM, dl
+;RLC     push bx             ; remaining border pixel count
+;RLC     xor ch, ch
+;RLC     xor bx, bx          ; number of pixels painted
+;RLC 
+;RLC     @paint:
+;RLC         ; End loop if a border pixel is found
+;RLC         mov al, es:[di]
+;RLC         mov ah, al
+;RLC         xor al, dh          ; border_attr
+;RLC         and al, dl          ; video_bitmask
+;RLC         je @end_paint
+;RLC         ; Set the new pixel
+;RLC         mov al, graph_attr
+;RLC         xor al, ah
+;RLC         and al, dl          ; video_bitmask
+;RLC         or ch, al           ; nonzero if a pixel changed
+;RLC         xor al, ah
+;RLC         mov es:[di], al
+;RLC         ; Go to next pixel
+;RLC         cmp si, bp
+;RLC         jae @end_paint
+;RLC         inc si              ; x_coordinate
+;RLC         ror dl, cl
+;RLC         inc bx
+;RLC         jnc @paint
+;RLC             inc di
+;RLC     jmp @paint
+;RLC     @end_paint:
+;RLC 
+;RLC     mov cl, ch          ; nonzero if any pixel changed
+;RLC     mov x_coordinate, si
+;RLC     mov video_pos, di
+;RLC     mov video_bitmask, dl
+;RLC     pop dx              ; remaining border pixel count
+;RLC 
+;RLC @end:
+;RLC     pop es
+;RLC     pop bp
+;RLC     pop di
+;RLC     pop si
+;RLC     pop ax
+;RLC     ret
+;RLC 
+ega_SCANR endp
+;RLC 
+; Fill pixels to the left until the border color is found
+; On entry: Setup done with PNTINI
+; Returns:  Start painting one pixel left of current position
+;           BX = number of pixels painted
+;           CL != 0 if at least one pixel changed
+;           Current position updated
+ega_SCANL proc near
+    int 3
+;RLC 
+;RLC     push ax
+;RLC     push dx
+;RLC     push si
+;RLC     push di
+;RLC     push es
+;RLC 
+;RLC     mov cl, cs:Screen_Mode.pixel_size[di]
+;RLC     les di, video_addr
+;RLC     mov dl, video_bitmask
+;RLC     mov dh, border_attr
+;RLC     mov si, x_coordinate
+;RLC     xor ch, ch
+;RLC     xor bx, bx
+;RLC 
+;RLC     @paint:
+;RLC         ; Go to next pixel
+;RLC         rol dl, cl
+;RLC         jnc @F
+;RLC             dec di
+;RLC         @@:
+;RLC         dec si          ; x_coordinate
+;RLC         js @end_paint
+;RLC         ; End loop if a border pixel is found
+;RLC         mov al, es:[di]
+;RLC         mov ah, al
+;RLC         xor al, dh      ; border_attr
+;RLC         and al, dl      ; video_bitmask
+;RLC         je @end_paint
+;RLC         ; Set the new pixel
+;RLC         mov al, graph_attr
+;RLC         xor al, ah
+;RLC         and al, dl      ; video_bitmask
+;RLC         or ch, al       ; nonzero if a pixel changed
+;RLC         xor al, ah
+;RLC         cmp al, ah
+;RLC         mov es:[di], al
+;RLC         inc bx
+;RLC     jmp @paint
+;RLC     @end_paint:
+;RLC     ; Move back one pixel to the right
+;RLC     inc si              ; x_coordinate
+;RLC     ror dl, cl
+;RLC     jnc @F
+;RLC         inc di
+;RLC     @@:
+;RLC     mov cl, ch              ; At least one pixel changed
+;RLC     mov video_pos, di
+;RLC     mov video_bitmask, dl
+;RLC     mov x_coordinate, si
+;RLC 
+;RLC     pop es
+;RLC     pop di
+;RLC     pop si
+;RLC     pop dx
+;RLC     pop ax
+;RLC     ret
+;RLC 
+ega_SCANL endp
 
 ;-----------------------------------------------------------------------------
 ; Speaker support
@@ -4164,6 +5830,13 @@ blit_addr dw ?
 blit_bits dw ?
 blit_bytes dw ?
 blit_mixer dw ?
+
+; EGA: Pixel attribute needs to be configured before pixel operation
+ega_set_pixel db ?
+
+; EGA: Bit-blits use this area to repack transferred bytes
+; The size is one half the maximum X resolution of an EGA/VGA planar mode
+ega_repack db 400 dup (?)
 
 DSEG ends
 
