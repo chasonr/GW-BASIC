@@ -4831,8 +4831,14 @@ ega_PGINIT proc near
     mov blit_addr, bx
     mov blit_bits, cx
     jnc @F
+        push ax
         xor ah, ah
+        shl ax, 1
+        mov bx, ax
+        mov ax, word ptr blit_op[bx]
         mov blit_mixer, ax
+        mov bx, blit_addr
+        pop ax
     @@:
     add cx, 7
     shr cx, 1
@@ -4840,7 +4846,21 @@ ega_PGINIT proc near
     shr cx, 1
     mov blit_bytes, cx
     mov cx, blit_bits
+    shr cx, 1
+    shr cx, 1
+    mov ega_blit_pixels, cx
+    mov cx, blit_bits
     ret
+
+; Table of mix operations
+; First byte selects the operation in the EGA registers
+; Second byte inverts the data
+blit_op:
+    db 020o, 0      ; OR
+    db 010o, 0      ; AND
+    db 000o, 0FFh   ; PRESET
+    db 000o, 0      ; PSET
+    db 030o, 0      ; XOR
 
 ega_PGINIT endp
 
@@ -4880,140 +4900,87 @@ ega_NREAD proc near
     ; We read each plane into a separate byte array, which may be slightly
     ; larger than the one provided by the caller, then shift and repack
     ; them to fit into the caller's array.
+    mov ega_blit_plane, 3
+    mov ega_blit_bits, 0
+    @plane:
+        ; Select plane to read
+        write_ega_reg 03CEh, 4, ega_blit_plane
 
-    ; First pass: copy four planes from the frame buffer
-    mov ax, ds                  ; ES:DI <- ega_repack
-    mov es, ax
-    mov di, offset ega_repack
-    lds bx, video_addr          ; DS:BX <- video_addr
-    mov ah, 3
-    assume es:DSEG, ds:nothing
-    @read_plane:
-        write_ega_reg 03CEh, 4, ah  ; Select the plane to read
-        mov si, bx
+        ; Read a plane into ega_repack
         mov cx, bp
-        rep movsb               ; Read one plane
-    dec ah
-    jns @read_plane
-    mov ax, es                  ; Set DS back to DSEG again
-    mov ds, ax
-    assume ds:DSEG, es:nothing
+        mov ax, ds
+        mov es, ax
+        mov di, offset ega_repack
+        lds si, video_addr
+        rep movsb
+        mov ds, ax
 
-    ; Second pass: shift bytes in ega_repack so the requested pixel is
-    ; on the left
-    ; Shift as a single array, to keep it simple
-    mov cx, x_coordinate        ; CL <- shift count
-    and cl, 7
-    je @end_shift               ; Skip if shift is zero
-        mov dx, bp                  ; DX <- byte count
-        shl dx, 1
-        shl dx, 1
-        mov si, offset ega_repack   ; SI <- ega_repack
-        mov al, [si]                ; AL <- first byte
-        shl ax, cl                  ; Shift left
-        mov ch, al                  ; Carry out
-        dec dx                      ; Count off one byte (there are at least four)
-        @shift:
-            mov al,[si+1]               ; AL <- byte
-            xor ah, ah
-            shl ax, cl                  ; Shift left
-            or ah, ch                   ; Carry in
-            mov ch, al                  ; Carry out
-            mov [si], ah
-            inc si
-        dec dx
-        jns @shift
-    @end_shift:
+        ; Shift so that no extra pixels appear to the left
+        mov cx, x_coordinate
+        and cx, 7       ; also CH <- 0; this is the carry byte
+        je @end_lshift  ; Skip if no shift needed
+            mov si, offset ega_repack
+            add si, bp
+            mov dx, bp
+            @lshift:
+                dec si
+                mov al, [si]
+                xor ah, ah
+                shl ax, cl
+                or al, ch       ; Carry in
+                mov ch, ah      ; Carry out
+                mov [si], al
+            dec dx
+            jnz @lshift
+        @end_lshift:
 
-    ; Third pass: Repack the planes into separate pixels
-    mov dx, bp                  ; DX <- bytes per plane
-    mov si, offset ega_repack   ; SI <- ega_repack
-    @repack:
-        ; Read a byte from each plane
-        mov di, si
-        mov bh, [si]            ; Plane 3
-        add si, bp
-        mov bl, [si]            ; Plane 2
-        add si, bp
-        mov ch, [si]            ; Plane 1
-        add si, bp
-        mov cl, [si]            ; Plane 0
-        mov si, di
-
-        ; Repack
-        repeat 2
-            shl bh, 1
-            rcl al, 1
-            shl bl, 1
-            rcl al, 1
-            shl ch, 1
-            rcl al, 1
-            shl cl, 1
-            rcl al, 1
-        endm
-        mov [si], al            ; Pixels 0 and 1
-        add si, bp
-        repeat 2
-            shl bh, 1
-            rcl al, 1
-            shl bl, 1
-            rcl al, 1
-            shl ch, 1
-            rcl al, 1
-            shl cl, 1
-            rcl al, 1
-        endm
-        mov [si], al            ; Pixels 2 and 3
-        add si, bp
-        repeat 2
-            shl bh, 1
-            rcl al, 1
-            shl bl, 1
-            rcl al, 1
-            shl ch, 1
-            rcl al, 1
-            shl cl, 1
-            rcl al, 1
-        endm
-        mov [si], al            ; Pixels 4 and 5
-        add si, bp
-        repeat 2
-            shl bh, 1
-            rcl al, 1
-            shl bl, 1
-            rcl al, 1
-            shl ch, 1
-            rcl al, 1
-            shl cl, 1
-            rcl al, 1
-        endm
-        mov [si], al            ; Pixels 6 and 7
-        mov si, di
-
-    inc si
-    dec dx
-    jnz @repack
-
-    ; Fourth pass: Transfer to the caller's array
-    mov si, offset ega_repack
-    mov di, blit_addr
-    mov cx, blit_bytes
-    xor ah, ah
-    @output:
-        mov al, [si]
-        mov [di], al
-        add si, bp
-        inc di
-        inc ah
-        and ah, 3
-        jne @F
-            sub si, bp
-            sub si, bp
-            sub si, bp
-            sub si, bp
-            inc si
-        @@:
-    loop @output
+        ; Shift to align with the caller's array
+        mov si, offset ega_repack   ; Copy from here
+        mov di, ega_blit_bits
+        shr di, 1
+        shr di, 1
+        shr di, 1
+        add di, blit_addr           ; to here
+        mov cx, ega_blit_bits
+        and cx, 7                   ; Shift count
+        mov dx, ega_blit_pixels
+        add dx, cx                  ; Number of bits to write
+        add dx, 7                   ; Convert to bytes
+        shr dx, 1
+        shr dx, 1
+        shr dx, 1
+        or cl, cl
+        je @no_rshift  ; Just copy if no shift needed
+            ; Shift right and append to caller's buffer
+            mov bl, cl              ; Mask off extra bits
+            xor bh, bh
+            mov ch, [di]            ; Initial carry in
+            mov ah, left_mask_1[bx]
+            not ah
+            and ch, ah
+            ; Shift
+            @rshift:
+                mov ah, [si]
+                xor al, al
+                shr ax, cl
+                or ah, ch       ; Carry in
+                mov ch, al      ; Carry out
+                mov [di], ah
+                inc si
+                inc di
+            dec dx
+            jnz @rshift
+        jmp @end_rshift
+        @no_rshift:
+            ; Shift is zero; just copy
+            mov cx, dx
+            rep movsb
+        @end_rshift:
+        ; Add to the number of bits copied
+        mov ax, ega_blit_pixels
+        add ega_blit_bits, ax
+    dec ega_blit_plane
+    jns @plane
 
     ; Advance the local memory address
     mov ax, blit_bytes
@@ -5048,6 +5015,9 @@ ega_NWRITE proc near
 
     cld
 
+    write_ega_reg 03CEh, 1, 0                     ; No set/reset
+    write_ega_reg 03CEh, 3, byte ptr blit_mixer+0 ; Selected operation, 0 bits rotation
+
     ; AX <- number of pixels to read
     mov ax, blit_bits
     shr ax, 1
@@ -5062,203 +5032,129 @@ ega_NWRITE proc near
     shr bp, 1
     shr bp, 1
 
-    ; First pass: Transfer from the caller's array
-    mov di, offset ega_repack
-    mov si, blit_addr
-    mov cx, blit_bytes
-    xor ah, ah
-    @input:
-        mov al, [si]
-        mov [di], al
-        add di, bp
-        inc si
-        inc ah
-        and ah, 3
-        jne @F
-            sub di, bp
-            sub di, bp
-            sub di, bp
-            sub di, bp
-            inc di
-        @@:
-    loop @input
+    mov ega_blit_plane, 08h
+    mov ega_blit_bits, 0
+    @plane:
+        ; Copy bytes from caller's buffer to ega_repack
+        mov cl, 3
+        mov si, ega_blit_bits
+        mov dx, si
+        shr si, cl
+        add si, blit_addr
+        and dx, 07h
+        add dx, ega_blit_pixels
+        add dx, 7
+        shr dx, cl
+        mov cx, dx
+        mov ax, ds
+        mov es, ax
+        mov di, offset ega_repack
+        rep movsb
 
-    ; Second pass: Repack the pixels into planes
-    mov dx, bp                  ; DX <- bytes per plane
-    mov si, offset ega_repack   ; SI <- ega_repack
-    @repack:
-        mov di, si
-
-        ; Repack
-        mov al, [si]            ; Pixels 0 and 1
-        repeat 2
-            shl al, 1
-            rcl bh, 1
-            shl al, 1
-            rcl bl, 1
-            shl al, 1
-            rcl ch, 1
-            shl al, 1
-            rcl cl, 1
-        endm
-        add si,bp
-        mov al, [si]            ; Pixels 2 and 3
-        repeat 2
-            shl al, 1
-            rcl bh, 1
-            shl al, 1
-            rcl bl, 1
-            shl al, 1
-            rcl ch, 1
-            shl al, 1
-            rcl cl, 1
-        endm
-        add si,bp
-        mov al, [si]            ; Pixels 4 and 5
-        repeat 2
-            shl al, 1
-            rcl bh, 1
-            shl al, 1
-            rcl bl, 1
-            shl al, 1
-            rcl ch, 1
-            shl al, 1
-            rcl cl, 1
-        endm
-        add si,bp
-        mov al, [si]            ; Pixels 6 and 7
-        repeat 2
-            shl al, 1
-            rcl bh, 1
-            shl al, 1
-            rcl bl, 1
-            shl al, 1
-            rcl ch, 1
-            shl al, 1
-            rcl cl, 1
-        endm
-        mov si, di
-
-        ; Write a byte from each plane
-        mov [si], bh            ; Plane 3
-        add si, bp
-        mov [si], bl            ; Plane 2
-        add si, bp
-        mov [si], ch            ; Plane 1
-        add si, bp
-        mov [si], cl            ; Plane 0
-        mov si, di
-
-    inc si
-    dec dx
-    jnz @repack
-
-    ; Third pass: shift bytes in ega_repack so the leftmost pixel aligns
-    ; with the X coordinate
-    ; Shift as a single array, to keep it simple
-    mov cx, x_coordinate        ; CL <- shift count
-    and cx, 7
-    je @end_shift               ; Skip if shift is zero
-        mov dx, bp                  ; DX <- byte count
-        shl dx, 1
-        shl dx, 1
-        mov si, offset ega_repack   ; SI <- ega_repack
-        @shift:
-            mov ah, [si]            ; AL <- byte
-            xor al, al
-            shr ax, cl              ; Shift right
-            or ah, ch               ; Carry in
-            mov ch, al              ; Carry out
-            mov [si], ah
-            inc si
-        dec dx
-        jnz @shift
-    @end_shift:
-
-    ; Fourth pass: Write bytes to the frame buffer
-    write_ega_reg 03CEh, 1, 0       ; No set/reset
-    write_ega_reg 03CEh, 3, 000o    ; replace operation, 0 bits rotation
-    mov si, x_coordinate
-    and si, 7
-    mov di, si
-    mov ax, blit_bits
-    shr ax, 1
-    shr ax, 1
-    add di, ax
-    dec di
-    cmp di, 7
-    jg @multibyte
-        ; Transfer a single byte
-        mov ah, left_mask_1[si]
-        and ah, right_mask_1[di]
-        write_ega_reg 03CEh, 8, ah  ; Write these bits
-        mov si, offset ega_repack
-        mov cl, 08h
-        les di, video_addr
-        @write_1:
-            write_ega_reg 03C4h, 2, cl  ; Write this plane
-            mov al, es:[di]         ; Set the latch register
-            mov al, [si]
-            mov es:[di], al
+        ; Shift left so that the first pixel is in the first bit
+        mov cx, ega_blit_bits
+        and cx, 07h     ; Also CH <- 0, initial carry in
+        je @end_lshift  ; Skip if shift count is zero
+            mov si, offset ega_repack
             add si, bp
-        shr cl, 1
-        jnz @write_1
-    jmp @end_write
-    @multibyte:
-        ; Transfer two or more bytes
-        mov cl, 08h
-        mov bx, offset ega_repack
-        @write_2:
-            ; First partial byte
-            write_ega_reg 03C4h, 2, cl  ; Write this plane
+            mov dx, bp
+            @lshift:
+                dec si
+                mov al, [si]
+                xor ah, ah
+                shl ax, cl
+                or al, ch       ; Carry in
+                mov ch, ah      ; Carry out
+                mov [si], al
+            dec dx
+            jnz @lshift
+        @end_lshift:
+
+        ; Shift right to align with the requested position
+        mov cx, x_coordinate
+        and cx, 07h     ; Also CH <- 0, initial carry in
+        je @end_rshift  ; Skip if shift count is zero
+            mov si, offset ega_repack
+            mov dx, bp
+            @rshift:
+                mov ah, [si]
+                xor al, al
+                shr ax, cl
+                or ah, ch       ; Carry in
+                mov ch, al      ; Carry out
+                mov [si], ah
+                inc si
+            dec dx
+            jnz @rshift
+        @end_rshift:
+
+        ; Transfer to the frame buffer
+        write_ega_reg 03C4h, 2, ega_blit_plane
+        cmp bp, 1
+        jne @multibyte
+            ; Transfer one byte
             mov si, x_coordinate
-            and si, 7
+            and si, 07h
+            mov di, si
+            add di, ega_blit_pixels
+            dec di
+            and di, 07h
             mov ah, left_mask_1[si]
-            write_ega_reg 03CEh, 8, ah
-            mov si, bx                  ; Start of this plane
+            and ah, right_mask_1[si]
+            write_ega_reg 03CEh, 8, ah ; Bits to transfer
             les di, video_addr
             mov al, es:[di]             ; Set the latch register
-            movsb
-            ; Zero or more complete bytes
-            write_ega_reg 03CEh, 8, 0FFh
-            mov dx, x_coordinate
-            and dx, 7
-            mov ax, blit_bits
-            shr ax, 1
-            shr ax, 1
-            add dx, ax
-            dec dx
-            shr dx, 1
-            shr dx, 1
-            shr dx, 1
-            dec dx
-            xchg cx, dx
-            jcxz @F
-                rep movsb
-            @@:
-            xchg cx, dx
-            ; Right partial byte
-            push di
-            mov di, x_coordinate
-            mov ax, blit_bits
-            shr ax, 1
-            shr ax, 1
-            add di, ax
-            dec di
-            and di, 7
-            mov ah, right_mask_1[di]
-            pop di
-            write_ega_reg 03CEh, 8, ah
+            mov al, ega_repack[0]
+            mov es:[di], al
+        jmp @end_write
+        @multibyte:
+            ; Transfer two or more bytes
+            mov si, offset ega_repack
+            les di, video_addr
+            ; Transfer the first byte
+            mov bx, x_coordinate
+            and bx, 07h
+            write_ega_reg 03CEh, 8, left_mask_1[bx] ; Bits to transfer
+            mov ah, byte ptr blit_mixer+1
             mov al, es:[di]             ; Set the latch register
-            movsb
-        add bx, bp
-        shr cl, 1
-        jnz @write_2
-    @end_write:
+            lodsb
+            xor al, ah
+            stosb
+            ; Transfer zero or more whole bytes
+            mov cx, bp
+            sub cx, 2
+            jcxz @end_whole
+            write_ega_reg 03CEh, 8, 0FFh ; Bits to transfer
+            @whole:
+                mov al, es:[di]         ; Set the latch register
+                lodsb
+                xor al, ah
+                stosb
+            loop @whole
+            @end_whole:
+            ; Transfer the last byte
+            mov bx, x_coordinate
+            add bx, ega_blit_pixels
+            dec bx
+            and bx, 07h
+            write_ega_reg 03CEh, 8, right_mask_1[bx] ; Bits to transfer
+            mov al, es:[di]             ; Set the latch register
+            lodsb
+            xor al, ah
+            stosb
+        @end_write:
+
+        ; Add to the number of bits copied
+        mov ax, ega_blit_pixels
+        add ega_blit_bits, ax
+    shr ega_blit_plane, 1
+    jnz @plane
 
     ; Advance the local memory address
     mov ax, blit_bytes
     add blit_addr, ax
+
+    mov ega_set_pixel, 1
 
     pop es
     pop bp
@@ -5835,8 +5731,15 @@ blit_mixer dw ?
 ega_set_pixel db ?
 
 ; EGA: Bit-blits use this area to repack transferred bytes
-; The size is one half the maximum X resolution of an EGA/VGA planar mode
-ega_repack db 400 dup (?)
+; The size is one eighth the maximum X resolution of an EGA/VGA planar mode,
+; plus one
+ega_repack db 101 dup (?)
+; EGA: Current plane while bit-blitting
+ega_blit_plane db ?
+; EGA: Bits per plane while bit-blitting
+ega_blit_pixels dw ?
+; EGA: Bits written to the caller's array
+ega_blit_bits dw ?
 
 DSEG ends
 
