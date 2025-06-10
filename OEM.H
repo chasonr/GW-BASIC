@@ -8,7 +8,7 @@
 	OEMRAM=0D
 ;Pascal program HFILE searches for the following line - DO NOT MODIFY
 ;** (VERSION SPECIFIC VALUES) ************************************************
-	NMLINE=25		;Max screen display text lines
+	NMLINE=30		;Max screen display text lines
 	NBANKS=1		;Number of graphic planes
 	PALSIZ=0		;Size of OEM color palette
 	DBLCHR=0		;Editor support for KANJI chars

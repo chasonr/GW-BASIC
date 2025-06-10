@@ -48,16 +48,8 @@ GWINI proc near
     int 10h
 
     ; Set up screen mode 0
-    mov bx, offset screen_mode_0
-    mov mode_ptr, bx
-    call mode_0_SCRSTT_init
-
-    mov  al,text_width
-    mov  cl,25
-    call SCNSWI
-    mov al, 0
-    call CLRSCN
-    call GRPINI
+    xor al, al
+    call set_screen_mode
 
     pop es
     pop cx
@@ -1284,7 +1276,7 @@ set_screen_mode proc near private
     jc @error
     mov mode_ptr, di
     mov  al,text_width
-    mov  cl,25
+    mov  cl,text_height
     call SCNSWI
     call GRPINI
     call SCNCLR
@@ -1490,7 +1482,7 @@ SWIDTH proc near
     jc @F
         mov text_width, al
         push cx
-        mov cl, 25
+        mov cl, text_height
         call SCNSWI
         pop cx
         call GRPINI
@@ -2253,7 +2245,9 @@ generic_FKYADV proc near private
     jnz @keys_are_on
         ; Function keys are currently off
         ; Turn them on and set the first one displayed to 1
-        mov max_line, 23
+        mov al, text_height
+        sub al, 2
+        mov max_line, al
         mov fkey_format+2, 1
         mov ax, 1
         jmp @end
@@ -2268,6 +2262,9 @@ generic_FKYADV proc near private
         cmp al, 10
         jbe @keys_on
             ; Turn keys off
+            mov al, text_height
+            dec al
+            mov max_line, al
             mov fkey_format+2, 1
             xor ax, ax
             jmp @end
@@ -2316,7 +2313,7 @@ convert_cursor endp
 ; Set the cursor to 0-based (row, column)
 set_cursor proc near private
 
-    cmp dh, 25
+    cmp dh, text_height
     jae @F
     cmp dl, text_width
     jae @F
@@ -2374,6 +2371,7 @@ mode_0_SCRSTT_init proc near private
         int 10h
         mov text_width, 80
     @end:
+    mov text_height, 25
     mov foreground_color, 7
     mov background_color, 0
     call mode_0_set_text_attr
@@ -2610,7 +2608,7 @@ mode_0_xy_to_address proc near private
     dec dl
     cmp dh, text_width  ; check bounds
     jae @bounds
-    cmp dl, 25
+    cmp dl, text_height
     jae @bounds
 
     push ax
@@ -2687,6 +2685,7 @@ mode_1_SCRSTT_init proc near private
 
     ; We're good.
     mov text_width, 40
+    mov text_height, 25
     mov text_attr, 3
     mov cursor_pos, 0FFFFh
     mov video_seg, 0B800h
@@ -4103,6 +4102,7 @@ mode_2_SCRSTT_init proc near private
 
     ; We're good.
     mov text_width, 80
+    mov text_height, 25
     mov text_attr, 1
     mov video_seg, 0B800h
     clc
@@ -4252,6 +4252,8 @@ ega_SCRSTT_init proc near private
     ; We're good.
     mov al, cs:Screen_Mode.text_columns[di]
     mov text_width, al
+    mov al, cs:Screen_Mode.text_rows[di]
+    mov text_height, al
     mov cursor_pos, 0FFFFh
     mov video_seg, 0A000h
     mov text_attr, 15
@@ -4356,19 +4358,12 @@ ega_CSRDSP proc near private
 
     ; Get the font height
     ; TODO: This should be configurable
-    mov bx, cs:Screen_Mode.y_res[di]
-    cmp bx, 350
-    jae @14_line
-        mov bl, 8
-    jmp @end_line
-    @14_line:
-    cmp bx, 400
-    jae @16_line
-        mov bl, 14
-    jmp @end_line
-    @16_line:
-        mov bl, 16
-    @end_line:
+    push ax
+    mov ax, cs:Screen_Mode.y_res[di]
+    mov bl, cs:Screen_Mode.text_rows[di]
+    div bl
+    mov bl, al
+    pop ax
 
     ; Develop the address of the text cell
     push ax
@@ -6015,6 +6010,8 @@ x_coordinate dw ?
 
 ; Width of text screen in columns
 text_width db ?
+; Height of text screen in rows
+text_height db ?
 
 ; Shape of text cursor set by CSRDSP
 cursor_shape dw 0B0Dh ; Initially in overwrite mode
