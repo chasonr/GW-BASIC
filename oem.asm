@@ -3959,7 +3959,128 @@ cga_SCANL proc near private
     ret
 
 cga_SCANL endp
+if 0
+;#############################################################################
+;RLC Create debug logs
+;#############################################################################
+debug_handle dw ?
+debug_name db "DEBUG.TXT"
+debug_buf db 32 dup (?)
+debug_open proc near private
+    push ax
+    push bx
+    push cx
+    push dx
+    push ds
 
+    ; Open as existing file
+    mov ax, cs
+    mov ds, ax
+    mov dx, offset debug_name
+    mov ax, 3D01h
+    int 21h
+    jnc @file_ok
+        ; Try to create the file
+        mov dx, offset debug_name
+        xor cx, cx
+        mov dx, offset debug_name
+        mov ax, 3C00h
+        int 21h
+        jc @error
+    @file_ok:
+    mov debug_handle, ax
+    ; Seek to end
+    mov bx, ax
+    xor cx, cx
+    xor dx, dx
+    mov ax, 4202h
+    int 21h
+
+@end:
+    pop ds
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+@error:
+    mov debug_handle, -1
+    jmp @end
+
+debug_open endp
+
+debug_close proc
+    push ax
+    push bx
+
+    mov bx, debug_handle
+    cmp bx, -1
+    je @end
+
+    mov ah, 3Eh
+    int 21h
+
+    @end:
+    pop bx
+    pop ax
+    ret
+debug_close endp
+
+debug_write proc
+    cmp debug_handle, -1
+    jne @F
+        ret
+    @@:
+    mov word ptr debug_buf+2, ax
+    mov word ptr debug_buf+4, bx
+    mov word ptr debug_buf+6, cx
+    mov word ptr debug_buf+8, dx
+    mov word ptr debug_buf+0Ah, bp
+    mov word ptr debug_buf+0Ch, si
+    mov word ptr debug_buf+0Eh, di
+    mov word ptr debug_buf+10h, ds
+    mov word ptr debug_buf+12h, es
+
+    ; Return address
+    pop ax
+    mov word ptr debug_buf+0, ax
+    push ax
+
+    mov ax, video_pos
+    mov word ptr debug_buf+14h, ax
+    mov al, video_bitmask
+    mov byte ptr debug_buf+16h, al
+    mov ax, CSAVEA
+    mov word ptr debug_buf+17h, ax
+    mov al, CSAVEM
+    mov byte ptr debug_buf+19h, al
+
+    mov bx, debug_handle
+    mov ax, cs
+    mov ds, ax
+    mov dx, offset debug_buf
+    mov cx, 1Ah
+    mov ah, 40h
+    int 21h
+
+    mov ax, word ptr debug_buf+2
+    mov bx, word ptr debug_buf+4
+    mov cx, word ptr debug_buf+6
+    mov dx, word ptr debug_buf+8
+    mov bp, word ptr debug_buf+0Ah
+    mov si, word ptr debug_buf+0Ch
+    mov di, word ptr debug_buf+0Eh
+    mov ds, word ptr debug_buf+10h
+    mov es, word ptr debug_buf+12h
+
+    ret
+debug_write endp
+
+;#############################################################################
+;RLC End debug logs
+;#############################################################################
+endif
 ;-----------------------------------------------------------------------------
 ; Screen mode 2: CGA 640x200, 2 colors
 ;-----------------------------------------------------------------------------
@@ -4306,6 +4427,7 @@ ega_CSRDSP proc near private
 
     @end:
 
+    write_ega_reg 03CEh, 3, 0
     pop es
     pop si
     pop dx
@@ -5155,6 +5277,7 @@ ega_NWRITE proc near
     add blit_addr, ax
 
     mov ega_set_pixel, 1
+    write_ega_reg 03CEh, 3, 0
 
     pop es
     pop bp
@@ -5172,18 +5295,11 @@ ega_NWRITE endp
 ; On entry: AL = border attribute
 ; Returns: C set if error
 ega_PNTINI proc near
-    int 3
-;RLC 
-;RLC     ; Duplicate lower two bits through the entire byte
-;RLC     push bx
-;RLC     and ax, 03h
-;RLC     mov bx, ax
-;RLC     mov al, bit_dup[bx]
-;RLC     pop bx
-;RLC     mov border_attr, al
-;RLC     clc
-;RLC     ret
-;RLC 
+
+    mov border_attr, al
+    clc
+    ret
+
 ega_PNTINI endp
 
 ; Move current position down with boundary check
@@ -5249,108 +5365,219 @@ ega_TUPC endp
 ;           format returned by FETCHC
 ;           Current position updated
 ega_SCANR proc near
-    int 3
-;RLC 
-;RLC     push ax
-;RLC     push si
-;RLC     push di
-;RLC     push bp
-;RLC     push es
-;RLC 
-;RLC     ; Skip right
-;RLC     mov cl, cs:Screen_Mode.pixel_size[di]
-;RLC     cmp cl, 1
-;RLC     je @mode_2
-;RLC         ; Mode 1
-;RLC         mov bp, 319
-;RLC     jmp @end_mode
-;RLC     @mode_2:
-;RLC         ; Mode 2
-;RLC         mov bp, 639
-;RLC     @end_mode:
-;RLC     mov bx, dx
-;RLC     les di, video_addr
-;RLC     mov dh, border_attr
-;RLC     mov dl, video_bitmask
-;RLC     mov si, x_coordinate
-;RLC     cmp bx, 0
-;RLC     je @paint_not_found
-;RLC     @border_scan:
-;RLC         ; End loop if a non-border pixel is found
-;RLC         mov al, es:[di]
-;RLC         xor al, dh          ; border_attr
-;RLC         and al, dl          ; video_bitmask
-;RLC         jne @paint_found
-;RLC         ; Go to next pixel
-;RLC         cmp si, bp
-;RLC         jae @paint_not_found
-;RLC         inc si              ; x_coordinate
-;RLC         ror dl, cl
-;RLC         jnc @F
-;RLC             inc di
-;RLC         @@:
-;RLC     dec bx
-;RLC     jnz @border_scan
-;RLC     @paint_not_found:
-;RLC         ; No matching pixel found
-;RLC         mov video_bitmask, dl
-;RLC         mov video_pos, di
-;RLC         mov x_coordinate, si
-;RLC         xor bx, bx ; Nothing painted
-;RLC         xor cl, cl
-;RLC         xor dx, dx ; No border pixels remain
-;RLC         jmp @end
-;RLC 
-;RLC     @paint_found:
-;RLC 
-;RLC     ; Set position where drawing begins
-;RLC     mov CSAVEA, di
-;RLC     mov CSAVEM, dl
-;RLC     push bx             ; remaining border pixel count
-;RLC     xor ch, ch
-;RLC     xor bx, bx          ; number of pixels painted
-;RLC 
-;RLC     @paint:
-;RLC         ; End loop if a border pixel is found
-;RLC         mov al, es:[di]
-;RLC         mov ah, al
-;RLC         xor al, dh          ; border_attr
-;RLC         and al, dl          ; video_bitmask
-;RLC         je @end_paint
-;RLC         ; Set the new pixel
-;RLC         mov al, graph_attr
-;RLC         xor al, ah
-;RLC         and al, dl          ; video_bitmask
-;RLC         or ch, al           ; nonzero if a pixel changed
-;RLC         xor al, ah
-;RLC         mov es:[di], al
-;RLC         ; Go to next pixel
-;RLC         cmp si, bp
-;RLC         jae @end_paint
-;RLC         inc si              ; x_coordinate
-;RLC         ror dl, cl
-;RLC         inc bx
-;RLC         jnc @paint
-;RLC             inc di
-;RLC     jmp @paint
-;RLC     @end_paint:
-;RLC 
-;RLC     mov cl, ch          ; nonzero if any pixel changed
-;RLC     mov x_coordinate, si
-;RLC     mov video_pos, di
-;RLC     mov video_bitmask, dl
-;RLC     pop dx              ; remaining border pixel count
-;RLC 
-;RLC @end:
-;RLC     pop es
-;RLC     pop bp
-;RLC     pop di
-;RLC     pop si
-;RLC     pop ax
-;RLC     ret
-;RLC 
+
+    push ax
+    push bp
+    push si
+    push di
+    push es
+
+    mov ega_set_pixel, 1
+
+    ; Set up read mode 1 and border color as target
+    push dx
+    write_ega_reg 03CEh, 5, 08h         ; Read mode 1
+    write_ega_reg 03CEh, 2, border_attr ; Color compare register
+    write_ega_reg 03CEh, 7, 0Fh         ; All bits of color are significant
+    pop dx
+
+    ; Right boundary
+    mov bp, cs:Screen_Mode.x_res[di]
+    dec bp
+
+    ; Graphics position
+    les di, video_addr
+    mov ah, video_bitmask
+    mov si, x_coordinate
+
+    ; Search right for non-border pixel
+    or dx, dx
+    jz @paint_not_found
+    @border_scan:
+        ; End loop if a non-border pixel is found
+        ; With read mode 1 set, a read of the frame buffer returns 1 where the
+        ; pixel matches the border color
+        mov al, es:[di]
+        and al, ah          ; video_bitmask
+        jz @paint_found
+        ; Go to next pixel
+        cmp si, bp
+        jae @paint_not_found
+        inc si              ; x_coordinate
+        ror ah, 1
+        jnc @F
+            inc di
+        @@:
+    dec dx
+    jnz @border_scan
+    @paint_not_found:
+        ; No matching pixel found
+        mov video_bitmask, ah
+        mov video_pos, di
+        mov x_coordinate, si
+        xor bx, bx ; Nothing painted
+        xor cl, cl
+        xor dx, dx ; No border pixels remain
+        push dx
+        jmp @end
+
+    @paint_found:
+
+    ; Set position where drawing begins
+    mov CSAVEA, di
+    mov CSAVEM, ah
+    push dx             ; remaining border pixel count
+    mov bx, si          ; starting X coordinate
+
+    ; Scan pixels until the border color is found again
+    @count_pixels:
+        mov al, es:[di]
+        and al, ah
+        jnz @end_count_pixels   ; Border color is found again
+        ; Go to next pixel
+        inc si                  ; x_coordinate
+        ror ah, 1
+        jnc @F
+            inc di
+        @@:
+    cmp si, bp
+    jbe @count_pixels           ; Right edge of screen is reached
+    nop
+    @end_count_pixels:
+
+    ; BX <- number of pixels to paint (SI - BX)
+    neg bx
+    add bx, si
+
+    ; Back up one pixel
+    rol ah, 1
+    jnc @F
+        dec di
+    @@:
+    dec si
+
+    ; Set this to the last painted pixel
+    mov video_pos, di
+    mov video_bitmask, ah
+    mov x_coordinate, si
+
+    ; CSAVEA:CSAVEM points to the pixel where we begin painting.
+    ; video_pos:video_bitmask pointrs to the pixel where we end painting.
+
+    ; While painting, we need to match the paint color
+    write_ega_reg 03CEh, 2, graph_attr ; Color compare register
+
+    ; Set the write options
+    write_ega_reg 03CEh, 0, graph_attr ; Set/reset the selected attribute
+    write_ega_reg 03CEh, 1, 0Fh        ; Set/reset all planes
+    write_ega_reg 03CEh, 3, 000o       ; Replace operation, 0 bits rotation
+    write_ega_reg 03C4h, 2, 0Fh        ; Write all planes
+
+    ; Get the start position
+    mov si, CSAVEA
+    mov ah, CSAVEM
+
+    ; Make AH into the left mask; e.g. 0x40 -> 0x7F
+    dec ah
+    stc
+    rcl ah, 1
+
+    ; Do we paint within a single byte?
+    cmp si, video_pos
+    jne @multibyte
+
+        ; Apply the right mask
+        mov al, video_bitmask
+        dec al
+        not al
+        and ah, al
+
+        ; Set the bit mask register
+        write_ega_reg 03CEh, 8, ah
+
+        ; Read color compare bits; this also sets the latch register
+        mov cl, es:[si]
+        not cl
+        and cl, ah
+
+        ; Paint the pixels
+        mov es:[si], al
+
+    jmp @end_paint
+    @multibyte:
+
+        ; Write the first byte:
+        ; Set the bit mask register
+        write_ega_reg 03CEh, 8, ah
+
+        ; Read color compare bits; this also sets the latch register
+        mov cl, es:[si]
+        not cl
+        and cl, ah
+
+        ; Paint the pixels
+        mov es:[si], al
+        inc si
+
+        ; Write zero or more whole bytes
+        write_ega_reg 03CEh, 8, 0FFh
+        mov di, video_pos
+        jmp @end_whole
+        @whole:
+            ; Read color compare bits
+            mov al, es:[si]
+            not al
+            or cl, al
+
+            ; Paint the pixels
+            mov es:[si], al
+            inc si
+        @end_whole:
+        cmp si, di
+        jb @whole
+
+        ; Write the last byte
+
+        ; Apply the right mask
+        mov ah, video_bitmask
+        dec ah
+        not ah
+        write_ega_reg 03CEh, 8, ah
+
+        ; Read color compare bits; this also sets the latch register
+        mov al, es:[si]
+        not al
+        and al, ah
+        or cl, al
+
+        ; Paint the pixels
+        mov es:[si], al
+
+    @end_paint:
+
+    ; Advance one point right
+    ror video_bitmask, 1
+    jnc @F
+        inc video_pos
+    @@:
+    inc x_coordinate
+
+@end:
+    write_ega_reg 03CEh, 2, 0
+    write_ega_reg 03CEh, 5, 0           ; Read mode 0
+    pop dx  ; Number of remaining border pixels
+    pop es
+    pop di
+    pop si
+    pop bp
+    pop ax
+
+    ret
+
+@count1 db '1'
+
 ega_SCANR endp
-;RLC 
+
 ; Fill pixels to the left until the border color is found
 ; On entry: Setup done with PNTINI
 ; Returns:  Start painting one pixel left of current position
@@ -5358,65 +5585,157 @@ ega_SCANR endp
 ;           CL != 0 if at least one pixel changed
 ;           Current position updated
 ega_SCANL proc near
-    int 3
-;RLC 
-;RLC     push ax
-;RLC     push dx
-;RLC     push si
-;RLC     push di
-;RLC     push es
-;RLC 
-;RLC     mov cl, cs:Screen_Mode.pixel_size[di]
-;RLC     les di, video_addr
-;RLC     mov dl, video_bitmask
-;RLC     mov dh, border_attr
-;RLC     mov si, x_coordinate
-;RLC     xor ch, ch
-;RLC     xor bx, bx
-;RLC 
-;RLC     @paint:
-;RLC         ; Go to next pixel
-;RLC         rol dl, cl
-;RLC         jnc @F
-;RLC             dec di
-;RLC         @@:
-;RLC         dec si          ; x_coordinate
-;RLC         js @end_paint
-;RLC         ; End loop if a border pixel is found
-;RLC         mov al, es:[di]
-;RLC         mov ah, al
-;RLC         xor al, dh      ; border_attr
-;RLC         and al, dl      ; video_bitmask
-;RLC         je @end_paint
-;RLC         ; Set the new pixel
-;RLC         mov al, graph_attr
-;RLC         xor al, ah
-;RLC         and al, dl      ; video_bitmask
-;RLC         or ch, al       ; nonzero if a pixel changed
-;RLC         xor al, ah
-;RLC         cmp al, ah
-;RLC         mov es:[di], al
-;RLC         inc bx
-;RLC     jmp @paint
-;RLC     @end_paint:
-;RLC     ; Move back one pixel to the right
-;RLC     inc si              ; x_coordinate
-;RLC     ror dl, cl
-;RLC     jnc @F
-;RLC         inc di
-;RLC     @@:
-;RLC     mov cl, ch              ; At least one pixel changed
-;RLC     mov video_pos, di
-;RLC     mov video_bitmask, dl
-;RLC     mov x_coordinate, si
-;RLC 
-;RLC     pop es
-;RLC     pop di
-;RLC     pop si
-;RLC     pop dx
-;RLC     pop ax
-;RLC     ret
-;RLC 
+
+    push ax
+    push dx
+    push si
+    push di
+    push es
+
+    mov ega_set_pixel, 1
+
+    ; Set up read mode 1 and border color as target
+    write_ega_reg 03CEh, 5, 08h         ; Read mode 1
+    write_ega_reg 03CEh, 2, border_attr ; Color compare register
+    write_ega_reg 03CEh, 7, 0Fh         ; All bits of color are significant
+
+    ; Graphics position
+    les di, video_addr
+    mov ah, video_bitmask
+    mov si, x_coordinate
+
+    ; Scan left until border color found
+    mov bx, 0
+    @scan:
+        inc bx
+
+        ; Go to next pixel
+        rol ah, 1
+        jnc @F
+            dec di
+        @@:
+        dec si          ; x_coordinate
+        js @end_scan
+
+        ; Reading the frame buffer gets 1 for any pixel that matches the border
+        mov al, es:[di]
+        and al, ah
+    jz @scan
+    @end_scan:
+    ; Move back one pixel to the right
+    inc si
+    ror ah, 1
+    jnc @F
+        inc di
+    @@:
+    dec bx
+
+    ; Update the graphics position and retrieve the starting position
+    xchg x_coordinate, si
+    mov si, di
+    xchg video_pos, di
+    xchg video_bitmask, ah
+
+    ; While painting, match the paint color
+    write_ega_reg 03CEh, 2, graph_attr ; Color compare register
+
+    ; Set the write options
+    write_ega_reg 03CEh, 0, graph_attr ; Set/reset the selected attribute
+    write_ega_reg 03CEh, 1, 0Fh        ; Set/reset all planes
+    write_ega_reg 03CEh, 3, 000o       ; Replace operation, 0 bits rotation
+    write_ega_reg 03C4h, 2, 0Fh        ; Write all planes
+
+    ; Make AH into the right mask, e.g. 0x40 -> 0xC0
+    dec ah
+    not ah
+
+    ; Do we paint within a single byte?
+    cmp di, video_pos
+    jne @multibyte
+
+        ; Apply the left mask
+        mov al, video_bitmask
+        dec al
+        stc
+        rcl al, 1
+        and ah, al
+
+        ; Set the bit mask register
+        write_ega_reg 03CEh, 8, ah
+
+        ; Read color compare bits; this also sets the latch register
+        mov cl, es:[di]
+        not cl
+        and cl, ah
+
+        ; Paint the pixels
+        mov es:[di], al
+
+    jmp @end_paint
+    @multibyte:
+
+        ; Write the first byte:
+        ; Set the bit mask register
+        write_ega_reg 03CEh, 8, ah
+
+        ; Read color compare bits; this also sets the latch register
+        mov cl, es:[di]
+        not cl
+        and cl, ah
+
+        ; Paint the pixels
+        mov es:[di], al
+        dec di
+
+        ; Write zero or more whole bytes
+        ; SI has the address of the last byte
+        write_ega_reg 03CEh, 8, 0FFh
+        jmp @end_whole
+        @whole:
+            ; Read color compare bits
+            mov al, es:[di]
+            not al
+            or cl, al
+
+            ; Paint the pixels
+            mov es:[di], al
+            dec di
+
+        @end_whole:
+        cmp di, si
+        ja @whole
+
+        ; Write the last byte
+
+        ; Apply the left mask
+        mov ah, video_bitmask
+        dec ah
+        stc
+        rcl ah, 1
+        write_ega_reg 03CEh, 8, ah
+
+        ; Read color compare bits; this also sets the latch register
+        mov al, es:[di]
+        not al
+        and al, ah
+        or cl, al
+
+        ; Paint the pixels
+        mov es:[di], al
+
+    @end_paint:
+
+    write_ega_reg 03CEh, 2, 0
+    write_ega_reg 03CEh, 5, 0           ; Read mode 0
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop ax
+    ret
+
+@count2 db '1'
+
 ega_SCANL endp
 
 ;-----------------------------------------------------------------------------
@@ -5705,7 +6024,6 @@ cursor_pos dw ?
 ; Colors set by SETFBC and SETCLR and returned by GETFBC
 foreground_color db 7
 background_color db 0
-border_color db 0
 text_attr db 07h
 
 ; Color set by SETATR
