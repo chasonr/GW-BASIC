@@ -4787,14 +4787,14 @@ ega_set_attr endp
 ; Returns: AL = pixel attribute
 ega_READC proc near
 
-    push ax
+    push bx
     push cx
     push dx ; write_ega_reg uses DX
     push es
 
     les si, video_addr
     mov ch, video_bitmask
-    xor al, al              ; Build the pixel here
+    xor bl, bl              ; Build the pixel here
 
     ; Read the bit from each plane
     mov cl, 3
@@ -4802,12 +4802,13 @@ ega_READC proc near
         write_ega_reg 03CEh, 4, cl  ; Read select register
         mov ah, es:[si]             ; Read the plane
         and ah, ch                  ; Isolate the bit
-        or al, ah                   ; Assemble with other planes
-        rol al, 1
+        or bl, ah                   ; Assemble with other planes
+        rol bl, 1
     dec cl
     jns @read
 
     ; Shift the bits into place
+    mov al, bl
     mov cx, x_coordinate
     and cl, 07h
     rol al, cl
@@ -4815,7 +4816,7 @@ ega_READC proc near
     pop es
     pop dx
     pop cx
-    pop ax
+    pop bx
     ret
 
 ega_READC endp
