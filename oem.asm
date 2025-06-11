@@ -792,6 +792,7 @@ mode_table label word
     dw 0                     ; EGA 640x350, monochrome
     dw 0                     ; VGA 640x480, monochrome
     dw offset screen_mode_12 ; VGA 640x480, 16 colors
+    dw offset screen_mode_13 ; VGA 320x200, 256 colors
 mode_table_size = ($ - mode_table)/2
 
 ; JWASM complains that the literal is too long if I try to use a structure.
@@ -1146,6 +1147,56 @@ screen_mode_12 label word
     db 4                      ; pixel_size
     db 12h                    ; bios_mode
 
+screen_mode_13 label word
+    dw vga_SCRSTT_init        ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw generic_SCROUT         ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw generic_SCROLL         ; SCROLL_handler
+    dw vga_CLRSCN             ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw vga_CSRDSP             ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw vga_SETCLR             ; SETCLR_handler
+    dw graphics_stub          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw vga_SETFBC             ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw vga_STOREC             ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw vga_UPC                ; UPC_handler
+    dw vga_DOWNC              ; DOWNC_handler
+    dw vga_LEFTC              ; LEFTC_handler
+    dw vga_RIGHTC             ; RIGHTC_handler
+    dw vga_MAPXYC             ; MAPXYC_handler
+    dw vga_SETATR             ; SETATR_handler
+    dw vga_READC              ; READC_handler
+    dw vga_SETC               ; SETC_handler
+    dw vga_NSETCX             ; NSETCX_handler
+    dw vga_PGINIT             ; PGINIT_handler
+    dw vga_NREAD              ; NREAD_handler
+    dw vga_NWRITE             ; NWRITE_handler
+    dw vga_PNTINI             ; PNTINI_handler
+    dw vga_TDOWNC             ; TDOWNC_handler
+    dw vga_TUPC               ; TUPC_handler
+    dw vga_SCANR              ; SCANR_handler
+    dw vga_SCANL              ; SCANL_handler
+    db 40                     ; text_columns
+    db 25                     ; text_rows
+    dw 320                    ; x_res
+    dw 200                    ; y_res
+    dw 00D5h                  ; width_height (0.833)
+    dw 0133h                  ; height_width (1.200)
+    db 1                      ; num_pages
+    db 8                      ; pixel_size
+    db 13h                    ; bios_mode
+
 ; Most functions will use this macro to select the correct handler
 dispatch macro handler
 
@@ -1381,7 +1432,6 @@ CSRATR endp
 ;                2 = overwrite mode (smaller)
 ;                3 = user mode
 ;           DX = cursor position: 1-based (column, row)
-;                It is uncertain that DX is set
 ; Returns: none
 public CSRDSP
 CSRDSP proc near
@@ -2142,7 +2192,6 @@ generic_CSRATR endp
 ;                2 = overwrite mode (smaller)
 ;                3 = user mode
 ;           DX = cursor position: 1-based (column, row)
-;                It is uncertain that DX is set
 ; Returns: none
 generic_CSRDSP proc near private
 
@@ -2784,7 +2833,6 @@ cga_CLRSCN endp
 ;                2 = overwrite mode (smaller)
 ;                3 = user mode
 ;           DX = cursor position: 1-based (column, row)
-;                It is uncertain that DX is set
 ; Returns: none
 ; Modes 1 and 2 both use this
 cga_CSRDSP proc near private
@@ -4054,12 +4102,16 @@ debug_write proc
     mov word ptr debug_buf+17h, ax
     mov al, CSAVEM
     mov byte ptr debug_buf+19h, al
+    mov ax, cursor_state
+    mov word ptr debug_buf+1Ah, ax
+    mov ax, cursor_pos
+    mov word ptr debug_buf+1Ch, ax
 
     mov bx, debug_handle
     mov ax, cs
     mov ds, ax
     mov dx, offset debug_buf
-    mov cx, 1Ah
+    mov cx, 1Eh
     mov ah, 40h
     int 21h
 
@@ -4346,7 +4398,6 @@ ega_CLRSCN endp
 ;                2 = overwrite mode (smaller)
 ;                3 = user mode
 ;           DX = cursor position: 1-based (column, row)
-;                It is uncertain that DX is set
 ; Returns: none
 ega_CSRDSP proc near private
 
@@ -4785,6 +4836,7 @@ ega_READC proc near
     push bx
     push cx
     push dx ; write_ega_reg uses DX
+    push si
     push es
 
     les si, video_addr
@@ -4809,6 +4861,7 @@ ega_READC proc near
     rol al, cl
 
     pop es
+    pop si
     pop dx
     pop cx
     pop bx
@@ -5438,7 +5491,6 @@ ega_SCANR proc near
         @@:
     cmp si, bp
     jbe @count_pixels           ; Right edge of screen is reached
-    nop
     @end_count_pixels:
 
     ; BX <- number of pixels to paint (SI - BX)
@@ -5569,8 +5621,6 @@ ega_SCANR proc near
     pop ax
 
     ret
-
-@count1 db '1'
 
 ega_SCANR endp
 
@@ -5730,9 +5780,742 @@ ega_SCANL proc near
     pop ax
     ret
 
-@count2 db '1'
-
 ega_SCANL endp
+
+;-----------------------------------------------------------------------------
+; Screen mode 13: VGA 320x200, 256 colors
+;-----------------------------------------------------------------------------
+
+; Set an EGA/VGA planar mode
+vga_SCRSTT_init proc near private
+
+    ; Set the correct BIOS mode
+    mov al, cs:Screen_Mode.bios_mode[di]
+    mov ah, 00h
+    int 10h
+
+    ; Did it work?
+    push bx
+    mov ah, 0Fh
+    int 10h
+    pop bx
+    cmp al, cs:Screen_Mode.bios_mode[di]
+    jne @error
+
+    ; We're good.
+    mov al, cs:Screen_Mode.text_columns[di]
+    mov text_width, al
+    mov al, cs:Screen_Mode.text_rows[di]
+    mov text_height, al
+    mov cursor_pos, 0FFFFh
+    mov video_seg, 0A000h
+    mov text_attr, 15
+    clc
+    ret
+
+    ; Oops.
+    @error:
+    stc
+    ret
+
+vga_SCRSTT_init endp
+
+; Clear the screen or the text window
+; On entry: If the CLS statement has a parameter, C is set and the parameter
+;           is in AL.
+;           Otherwise, C is clear and AL is 0.
+; Returns:  C clear if screen cleared
+;           SCNCLR and GRPINI called
+vga_CLRSCN proc near private
+
+    cmp al, 0
+    stc
+    jne @end
+
+        push ax
+        push cx
+        push di
+        push es
+
+        mov es, video_seg
+        xor di, di
+        mov cx, 32000
+        xor ax, ax
+        cld
+        rep stosw
+
+        mov cursor_pos, 0FFFFh
+
+        call SCNCLR
+        call GRPINI
+
+        pop es
+        pop dx
+        pop cx
+        pop ax
+
+        clc
+
+    @end:
+    ret
+
+vga_CLRSCN endp
+
+; On entry: AL = cursor type
+;                0 = off
+;                1 = insert mode (larger)
+;                2 = overwrite mode (smaller)
+;                3 = user mode
+;           DX = cursor position: 1-based (column, row)
+; Returns: none
+vga_CSRDSP proc near private
+
+    push ax
+    push bx
+    push dx
+    push si
+    push es
+
+    ; Develop the address of the text cell
+    push ax
+    xchg dh, dl
+    dec dl  ; 0-based column
+    dec dh  ; 0-based row
+    mov al, dh          ; AX <- row
+    xor ah, ah
+    xor dh, dh
+    mov si, dx          ; SI <- column
+    mov bx, 320
+    mul bx              ; AX <- address of first column
+    add si, ax          ; SI <- address
+    shl si, 1
+    shl si, 1
+    shl si, 1
+    mov es, video_seg
+
+    ; Remove any existing cursor
+    call vga_cursor_off
+
+    pop ax
+    cmp al, 0
+    je @end
+
+        ; Set the cursor shape
+        cmp al, 1
+        jne @two
+            mov ax, 0007h
+            jmp @on
+        @two:
+        cmp al, 2
+        jne @three
+            mov ax, 0607h
+            jmp @on
+        @three:
+            mov ax, cursor_shape
+        @on:
+
+        ; Display the new cursor
+        call vga_cursor_flip
+        mov cursor_pos, si
+        mov cursor_state, ax
+
+    @end:
+
+    pop es
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+vga_CSRDSP endp
+
+; Turn off the cursor
+vga_cursor_off proc near private
+
+    cmp cursor_pos, 0FFFFh
+    je @end ; it isn't already off
+        push ax
+        push si
+        push es
+
+        mov es, video_seg
+        mov si, cursor_pos
+        mov ax, cursor_state
+        call vga_cursor_flip
+
+        pop es
+        pop si
+        pop ax
+        mov cursor_pos, 0FFFFh
+    @end:
+
+    ret
+
+vga_cursor_off endp
+
+; Reverse the area of text that the cursor occupies
+; On entry: AH = start line; AL = end_line
+;           ES:SI = address of line 0 of the text cell
+vga_cursor_flip proc near private
+
+    push bx
+    push cx
+    push dx
+    push si
+
+    mov ch, 0
+    @flip:
+
+        ; Flip line
+        cmp ch, ah
+        jb @no_flip
+        cmp ch, al
+        ja @no_flip
+            mov bx, 7
+            @pixel:
+                xor byte ptr es:[bx+si], 0Fh
+            dec bx
+            jns @pixel
+        @no_flip:
+        inc ch
+
+        ; Advance to next line
+        add si, 320
+
+    cmp ch, 8
+    jb @flip
+
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    ret
+
+vga_cursor_flip endp
+
+; Set up configured colors
+; On entry: BL != 0 if parameter 1 specified
+;           BH contains parameter 1
+;           CL != 0 if parameter 2 specified
+;           CH contains parameter 1
+;           DL != 0 if parameter 3 specified
+;           DH contains parameter 3
+; Returns: C set if error
+vga_SETCLR proc near
+
+    or bl, bl
+    je @F
+        ; Can't use COLOR 0 because the on-screen editor doesn't work
+        or bh, bh
+        je @error
+
+        mov foreground_color, bh
+        mov text_attr, bh
+    @@:
+
+    or cl, cl
+    je @F
+        ; Background color
+        push ax
+        push bx
+        mov bl, ch
+        mov bh, 0
+        mov ah, 0Bh
+        int 10h
+        pop bx
+        pop ax
+    @@:
+
+    clc
+    ret
+
+    @error:
+    stc
+    ret
+
+vga_SETCLR endp
+
+; Set foreground and background colors
+; On entry: foreground_color and background_color set
+; Returns: none
+vga_SETFBC proc near private
+
+    ret
+
+vga_SETFBC endp
+
+; Set a cursor position retrieved from FETCHC
+; On entry: AL:BX = cursor position
+; Returns:  none
+vga_STOREC proc near
+
+    push ax
+    push bx
+    push dx
+
+    mov video_pos, bx
+    mov video_bitmask, al
+
+    ; Recover the X coordinate
+    mov ax, video_pos
+    xor dx, dx
+    mov bx, 320
+    div bx
+    mov x_coordinate, dx
+
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+vga_STOREC endp
+
+; Move one pixel up
+; On entry: none
+; Returns   none
+vga_UPC proc near
+
+    sub video_pos, 320
+    ret
+
+vga_UPC endp
+
+; Move one pixel down
+; On entry: none
+; Returns   none
+vga_DOWNC proc near
+
+    add video_pos, 320
+    ret
+
+vga_DOWNC endp
+
+; Move one pixel left
+; On entry: none
+; Returns   none
+vga_LEFTC proc near
+
+    dec video_pos
+    ret
+
+vga_LEFTC endp
+
+; Move one pixel right
+; On entry: none
+; Returns   none
+vga_RIGHTC proc near
+
+    inc video_pos
+    ret
+
+vga_RIGHTC endp
+
+; Map pixel coordinates to a cursor position as returned by FETCHC
+; On entry: CX = X coordinate
+;           DX = Y coordinate
+; Returns: none
+vga_MAPXYC proc near
+
+    push ax
+    push dx
+
+    mov ax, 320
+    mul dx
+    add ax, cx
+    mov video_pos, ax
+    mov video_bitmask, 0
+
+    pop dx
+    pop ax
+    ret
+
+vga_MAPXYC endp
+
+; Set the pixel attribute to be drawn
+; On entry: AL = attribute
+; Returns:  C set if error
+vga_SETATR proc near private
+
+    mov graph_attr, al
+    clc
+    ret
+
+vga_SETATR endp
+
+; Read pixel at current position
+; Returns: AL = pixel attribute
+vga_READC proc near
+
+    push bx
+    push es
+    les bx, video_addr
+    mov al, es:[bx]
+    pop es
+    pop bx
+    ret
+
+vga_READC endp
+
+; Write pixel at current location, using current attribute
+; Returns: none
+vga_SETC proc near
+
+    push ax
+    push bx
+    push es
+    les bx, video_addr
+    mov al, graph_attr
+    mov es:[bx], al
+    pop es
+    pop bx
+    pop ax
+    ret
+
+vga_SETC endp
+
+; Write multiple pixels starting at current position and proceeding right
+; On entry: BX = pixel count
+; Returns:  none
+vga_NSETCX proc near
+
+    push ax
+    push cx
+    push di
+    push es
+
+    cld
+    les di, video_addr
+    mov cx, bx
+    mov al, graph_attr
+    rep stosb
+
+    pop es
+    pop di
+    pop cx
+    pop ax
+    ret
+
+vga_NSETCX endp
+
+; Set up for bit-blit via NREAD or NWRITE
+; On entry: BX = pixel array
+;           CX = number of bits
+;           If C set:
+;           AL = index to a drawing routine (0-4)
+;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
+vga_PGINIT proc near
+
+    mov blit_addr, bx
+    mov blit_bits, cx
+    jnc @F
+        xor ah, ah
+        mov blit_mixer, ax
+    @@:
+    shr cx, 1
+    shr cx, 1
+    shr cx, 1
+    mov blit_bytes, cx
+    mov cx, blit_bits
+    ret
+
+vga_PGINIT endp
+
+; Read a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          main memory address advanced to next line
+;          pixels read in packed form into main memory
+vga_NREAD proc near
+
+    push ax
+    push cx
+    push si
+    push di
+    push es
+
+    cld
+    mov cx, blit_bytes
+    mov ax, ds
+    mov es, ax
+    mov di, blit_addr
+    lds si, video_addr
+    rep movsb
+    mov ds, ax
+
+    ; Advnce the main memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    pop es
+    pop di
+    pop si
+    pop cx
+    pop ax
+    ret
+
+vga_NREAD endp
+
+; Write a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          local memory address advanced to the next line
+vga_NWRITE proc near
+
+    push ax
+    push cx
+    push si
+    push di
+    push es
+
+    mov cx, blit_bytes
+    or cx, cx
+    je @mix_end         ; Skip if 0 bytes to copy
+    mov si, blit_addr
+    les di, video_addr
+    cld
+
+    mov ax, blit_mixer
+    cmp ax, 0
+    jne @mix_1
+        ; OR
+        @@:
+            lodsb
+            or al, es:[di]
+            stosb
+        loop @B
+    jmp @mix_end
+    @mix_1:
+    cmp ax, 1
+    jne @mix_2
+        ; AND
+        @@:
+            lodsb
+            and al, es:[di]
+            stosb
+        loop @b
+    jmp @mix_end
+    @mix_2:
+    cmp ax, 2
+    jne @mix_3
+        ; PRESET
+        @@:
+            lodsb
+            not al
+            stosb
+        loop @b
+    jmp @mix_end
+    @mix_3:
+    cmp ax, 3
+    jne @mix_4
+        ; PSET
+        rep movsb
+    jmp @mix_end
+    @mix_4:
+        ; XOR
+        @@:
+            lodsb
+            xor al, es:[di]
+            stosb
+        loop @b
+    @mix_end:
+
+    ; Advnce the main memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    pop es
+    pop di
+    pop si
+    pop cx
+    pop ax
+    ret
+
+vga_NWRITE endp
+
+; Set up flood fill algorithm
+; On entry: AL = border attribute
+; Returns: C set if error
+vga_PNTINI proc near
+
+    mov border_attr, al
+    clc
+    ret
+
+vga_PNTINI endp
+
+; Move current position down with boundary check
+; Returns: C set if moving down would pass the bottom of the screen;
+;          the current position is unchanged in that case
+; This differs from DOWNC only in the boundary check
+vga_TDOWNC proc near
+
+    cmp video_pos, 64000 - 320
+    jae @bounds
+        add video_pos, 320
+        clc
+        ret
+    @bounds:
+        stc
+        ret
+
+vga_TDOWNC endp
+
+; Move current position up with boundary check
+; Returns: C set if moving up would pass the top of the screen;
+;          the current position is unchanged in that case
+; This differs from UPC only in the boundary check
+vga_TUPC proc near
+
+    cmp video_pos, 320
+    jb @bounds
+        sub video_pos, 320
+        clc
+        ret
+    @bounds:
+        stc
+        ret
+
+vga_TUPC endp
+
+; On entry: Setup done with PNTINI
+;           DX = number of border pixels to skip right
+;           No pixels are painted if this many pixels in the border color
+;           are found
+; Returns:  BX = number of pixels painted
+;           DX reduced by number of border pixels skipped
+;           CL != 0 if at least one pixel changed
+;           CSAVEA and CSAVEM set to the point where drawing began, in the
+;           format returned by FETCHC
+;           Current position updated
+vga_SCANR proc near
+
+    push ax
+    push si
+    push di
+    push es
+
+    les di, video_addr
+    mov si, x_coordinate
+    mov ah, border_attr
+
+    ; Search right for non-border pixel
+    or dx, dx
+    jz @paint_not_found
+    @border_scan:
+        ; End loop if a non-border pixel is found
+        mov al, es:[di]
+        cmp al, ah
+        jne @paint_found
+        ; Go to next pixel
+        cmp si, 319
+        jae @paint_not_found
+        inc si                  ; x_coordinate
+        inc di
+    dec dx
+    jnz @border_scan
+    @paint_not_found:
+        ; No matching pixel found
+        mov video_pos, di
+        mov x_coordinate, si
+        xor bx, bx ; Nothing painted
+        xor cl, cl
+        xor dx, dx ; No border pixels remain
+        jmp @end
+
+    @paint_found:
+
+    ; Set position where drawing begins
+    mov CSAVEA, di
+    mov CSAVEM, 0
+    xor cl, cl
+    xor bx, bx
+    mov ch, graph_attr
+
+    @paint:
+        ; End loop if a border pixel is found
+        mov al, es:[di]
+        cmp al, ah
+        je @end_paint
+        ; Update the change flag
+        xor al, ch  ; graph_attr
+        or cl, al
+        ; Paint the pixel
+        mov es:[di], ch
+        inc di      ; video_pos
+        inc si      ; x_coordinate
+        inc bx      ; pixel count
+    jmp @paint
+    @end_paint:
+
+    ; Set the graphics position to the border pixel
+    mov video_pos, di
+    mov x_coordinate, si
+
+    @end:
+    pop es
+    pop di
+    pop si
+    pop ax
+    ret
+
+vga_SCANR endp
+
+; Fill pixels to the left until the border color is found
+; On entry: Setup done with PNTINI
+; Returns:  Start painting one pixel left of current position
+;           BX = number of pixels painted
+;           CL != 0 if at least one pixel changed
+;           Current position updated
+vga_SCANL proc near
+
+    push ax
+    push si
+    push di
+    push es
+
+    ; Graphics position
+    les di, video_addr
+    mov ah, border_attr
+    mov si, x_coordinate
+    xor bx, bx
+    xor cl, cl
+    mov ch, graph_attr
+
+    ; Scan left until border color found
+    @paint:
+        ; Go to next pixel
+        dec di      ; video_pos
+        dec si      ; x_coordinate
+        js @end_paint
+        ; End loop if a border pixel is found
+        mov al, es:[di]
+        cmp al, ah  ; border_attr
+        je @end_paint
+        ; Update the change flag
+        xor al, ch  ; graph_attr
+        or cl, al
+        ; Paint the pixel
+        mov es:[di], ch ; graph_attr
+        inc bx      ; pixel count
+    jmp @paint
+    @end_paint:
+
+    ; Move back one pixel to the right
+    inc di
+    inc si
+
+    ; Set the graphics position to the last pixel painted
+    mov video_pos, di
+    mov x_coordinate, si
+
+    pop es
+    pop di
+    pop si
+    pop ax
+    ret
+
+vga_SCANL endp
 
 ;-----------------------------------------------------------------------------
 ; Speaker support
