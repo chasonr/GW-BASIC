@@ -954,7 +954,7 @@ screen_mode_7 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -1004,7 +1004,7 @@ screen_mode_8 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -1054,7 +1054,7 @@ screen_mode_9 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -1104,7 +1104,7 @@ screen_mode_12 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -4590,6 +4590,148 @@ ega_SCROUT proc near private
     jmp generic_SCROUT
 
 ega_SCROUT endp
+
+; Scroll window beginning at column AH, row AL,
+; extending through CH columns and CL rows,
+; to column BH, row BL
+; Rows and columns begin at 1
+; Returns: None
+ega_SCROLL proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push bp
+    push si
+    push di
+    push es
+
+    ; Convert coordinates to 0-based
+    dec ah
+    dec al
+    dec bh
+    dec bl
+
+    ; Set up the scrolling:
+    ; Save the registers
+    mov scroll_c1, ah
+    mov scroll_r1, al
+    mov scroll_c2, bh
+    mov scroll_r2, bl
+    mov scroll_width, ch
+    mov scroll_height, cl
+
+    ; Select read mode 0 and write mode 1
+    write_ega_reg 03CEh, 5, 01h
+    ; Write all planes
+    write_ega_reg 03C4h, 2, 0Fh
+
+    ; Get the font height
+    mov ax, cs:Screen_Mode.y_res[di]
+    div cs:Screen_Mode.text_rows[di]
+    mov bh, al
+    ; Get the number of bytes per line
+    mov ax, cs:Screen_Mode.x_res[di]
+    shr ax, 1
+    shr ax, 1
+    shr ax, 1
+    mov bl, al
+
+    ; Get the number of bytes per text row
+    mul bh
+    mov cx, ax
+
+    ; Convert coordinates to addresses
+    mov al, scroll_r1
+    xor ah, ah
+    mul cx              ; bytes per text row
+    add al, scroll_c1
+    adc ah, 0
+    mov scroll_from, ax
+
+    mov al, scroll_r2
+    xor ah, ah
+    mul cx              ; bytes per text row
+    add al, scroll_c2
+    adc ah, 0
+    mov scroll_to, ax
+
+    ; Address the frame buffer
+    mov es, video_seg
+
+    ; Which way are we scrolling?
+    mov ax, scroll_to
+    cmp ax, scroll_from
+    jae @scroll_higher
+        ; Scroll from higher to lower address
+        cld
+        mov al, scroll_height
+        mul bh                  ; lines per text row
+        mov dx, ax
+        @scroll_1:
+            ; Scroll one line
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsb es:[di], es:[si]
+            ; Go to next line
+            mov al, bl
+            xor ah, ah
+            add scroll_from, ax
+            add scroll_to, ax
+        dec dx
+        jnz @scroll_1
+    jmp @scroll_end
+    @scroll_higher:
+        ; Scroll from lower to higher address
+        ; Point starting addresses to last cell to scroll
+        mov al, scroll_height
+        mul bh                  ; AX <- lines to scroll
+        push ax
+        dec ax                  ; AX <- lines to scroll - 1
+        mov dl, bl
+        xor dh, dh
+        mul dx                  ; AX <- displacement to last scrolled line
+        add al, scroll_width
+        adc ah, 0
+        dec ax
+        add scroll_from, ax
+        add scroll_to, ax
+        ; Begin loop
+        std
+        pop dx                  ; DX <- lines to scroll
+        @scroll_2:
+            ; Scroll one line
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsb es:[di], es:[si]
+            ; Go to next line
+            mov al, bl
+            xor ah, ah
+            sub scroll_from, ax
+            sub scroll_to, ax
+        dec dx
+        jnz @scroll_2
+    @scroll_end:
+
+    ; Select read mode 0 and write mode 0
+    write_ega_reg 03CEh, 5, 00h
+
+    pop es
+    pop di
+    pop si
+    pop bp
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+ega_SCROLL endp
 
 ; Clear the screen or the text window
 ; On entry: If the CLS statement has a parameter, C is set and the parameter
