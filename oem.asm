@@ -4937,7 +4937,7 @@ ega_cursor_flip endp
 ;           DL != 0 if parameter 3 specified
 ;           DH contains parameter 3
 ; Returns: C set if error
-ega_SETCLR proc near
+ega_SETCLR proc near private
 
     or bl, bl
     je @F
@@ -4974,7 +4974,7 @@ ega_SETCLR endp
 ; Set screen width in columns
 ; On entry: AL = number of requested columns
 ; Returns C set if error
-ega_SWIDTH_80 proc near
+ega_SWIDTH_80 proc near private
 
     cmp AL, 80
     je @80_columns
@@ -4999,7 +4999,7 @@ ega_SWIDTH_80 endp
 ; Set screen width in columns
 ; On entry: AL = number of requested columns
 ; Returns C set if error
-ega_SWIDTH_40 proc near
+ega_SWIDTH_40 proc near private
 
     cmp AL, 80
     je @80_columns
@@ -5033,7 +5033,7 @@ ega_SETFBC endp
 ; Set a cursor position retrieved from FETCHC
 ; On entry: AL:BX = cursor position
 ; Returns:  none
-ega_STOREC proc near
+ega_STOREC proc near private
 
     push ax
     push dx
@@ -5077,7 +5077,7 @@ ega_STOREC endp
 ; Move one pixel up
 ; On entry: none
 ; Returns   none
-ega_UPC proc near
+ega_UPC proc near private
 
     push ax
     mov ax, cs:Screen_Mode.x_res[di]
@@ -5093,7 +5093,7 @@ ega_UPC endp
 ; Move one pixel down
 ; On entry: none
 ; Returns   none
-ega_DOWNC proc near
+ega_DOWNC proc near private
 
     push ax
     mov ax, cs:Screen_Mode.x_res[di]
@@ -5109,7 +5109,7 @@ ega_DOWNC endp
 ; Move one pixel left
 ; On entry: none
 ; Returns   none
-ega_LEFTC proc near
+ega_LEFTC proc near private
 
     ; Shift the bit mask left
     rol video_bitmask, 1
@@ -5126,7 +5126,7 @@ ega_LEFTC endp
 ; Move one pixel right
 ; On entry: none
 ; Returns   none
-ega_RIGHTC proc near
+ega_RIGHTC proc near private
 
     ; Shift the bit mask right
     ror video_bitmask, 1
@@ -5144,7 +5144,7 @@ ega_RIGHTC endp
 ; On entry: CX = X coordinate
 ;           DX = Y coordinate
 ; Returns: none
-ega_MAPXYC proc near
+ega_MAPXYC proc near private
  
     push ax
     push bx
@@ -5209,7 +5209,7 @@ ega_set_attr endp
 
 ; Read pixel at current position
 ; Returns: AL = pixel attribute
-ega_READC proc near
+ega_READC proc near private
 
     push bx
     push cx
@@ -5249,7 +5249,7 @@ ega_READC endp
 
 ; Write pixel at current location, using current attribute
 ; Returns: none
-ega_SETC proc near
+ega_SETC proc near private
 
     push ax
     push dx
@@ -5278,7 +5278,7 @@ ega_SETC endp
 ; Write multiple pixels starting at current position and proceeding right
 ; On entry: BX = pixel count
 ; Returns:  none
-ega_NSETCX proc near
+ega_NSETCX proc near private
 
     push ax
     push bx
@@ -5375,7 +5375,7 @@ ega_NSETCX endp
 ;           If C set:
 ;           AL = index to a drawing routine (0-4)
 ;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
-ega_PGINIT proc near
+ega_PGINIT proc near private
 
     mov blit_addr, bx
     mov blit_bits, cx
@@ -5418,7 +5418,7 @@ ega_PGINIT endp
 ; Returns: none in registers
 ;          main memory address advanced to next line
 ;          pixels read in packed form into main memory
-ega_NREAD proc near
+ega_NREAD proc near private
 
     push ax
     push bx
@@ -5551,7 +5551,7 @@ ega_NREAD endp
 ; On entry: PGINIT complete
 ; Returns: none in registers
 ;          local memory address advanced to the next line
-ega_NWRITE proc near
+ega_NWRITE proc near private
 
     push ax
     push bx
@@ -5721,7 +5721,7 @@ ega_NWRITE endp
 ; Set up flood fill algorithm
 ; On entry: AL = border attribute
 ; Returns: C set if error
-ega_PNTINI proc near
+ega_PNTINI proc near private
 
     mov border_attr, al
     clc
@@ -5733,7 +5733,7 @@ ega_PNTINI endp
 ; Returns: C set if moving down would pass the bottom of the screen;
 ;          the current position is unchanged in that case
 ; This differs from DOWNC only in the boundary check
-ega_TDOWNC proc near
+ega_TDOWNC proc near private
 
     push ax
     push bx
@@ -5762,7 +5762,7 @@ ega_TDOWNC endp
 ; Returns: C set if moving up would pass the top of the screen;
 ;          the current position is unchanged in that case
 ; This differs from UPC only in the boundary check
-ega_TUPC proc near
+ega_TUPC proc near private
 
     push ax
     push bx
@@ -5791,7 +5791,7 @@ ega_TUPC endp
 ;           CSAVEA and CSAVEM set to the point where drawing began, in the
 ;           format returned by FETCHC
 ;           Current position updated
-ega_SCANR proc near
+ega_SCANR proc near private
 
     push ax
     push bp
@@ -6008,7 +6008,7 @@ ega_SCANR endp
 ;           BX = number of pixels painted
 ;           CL != 0 if at least one pixel changed
 ;           Current position updated
-ega_SCANL proc near
+ega_SCANL proc near private
 
     push ax
     push dx
@@ -6504,7 +6504,7 @@ vga_cursor_flip endp
 ;           DL != 0 if parameter 3 specified
 ;           DH contains parameter 3
 ; Returns: C set if error
-vga_SETCLR proc near
+vga_SETCLR proc near private
 
     or bl, bl
     je @F
@@ -6550,7 +6550,7 @@ vga_SETFBC endp
 ; Set a cursor position retrieved from FETCHC
 ; On entry: AL:BX = cursor position
 ; Returns:  none
-vga_STOREC proc near
+vga_STOREC proc near private
 
     push ax
     push bx
@@ -6576,7 +6576,7 @@ vga_STOREC endp
 ; Move one pixel up
 ; On entry: none
 ; Returns   none
-vga_UPC proc near
+vga_UPC proc near private
 
     sub video_pos, 320
     ret
@@ -6586,7 +6586,7 @@ vga_UPC endp
 ; Move one pixel down
 ; On entry: none
 ; Returns   none
-vga_DOWNC proc near
+vga_DOWNC proc near private
 
     add video_pos, 320
     ret
@@ -6596,7 +6596,7 @@ vga_DOWNC endp
 ; Move one pixel left
 ; On entry: none
 ; Returns   none
-vga_LEFTC proc near
+vga_LEFTC proc near private
 
     dec video_pos
     ret
@@ -6606,7 +6606,7 @@ vga_LEFTC endp
 ; Move one pixel right
 ; On entry: none
 ; Returns   none
-vga_RIGHTC proc near
+vga_RIGHTC proc near private
 
     inc video_pos
     ret
@@ -6617,7 +6617,7 @@ vga_RIGHTC endp
 ; On entry: CX = X coordinate
 ;           DX = Y coordinate
 ; Returns: none
-vga_MAPXYC proc near
+vga_MAPXYC proc near private
 
     push ax
     push dx
@@ -6647,7 +6647,7 @@ vga_SETATR endp
 
 ; Read pixel at current position
 ; Returns: AL = pixel attribute
-vga_READC proc near
+vga_READC proc near private
 
     push bx
     push es
@@ -6661,7 +6661,7 @@ vga_READC endp
 
 ; Write pixel at current location, using current attribute
 ; Returns: none
-vga_SETC proc near
+vga_SETC proc near private
 
     push ax
     push bx
@@ -6679,7 +6679,7 @@ vga_SETC endp
 ; Write multiple pixels starting at current position and proceeding right
 ; On entry: BX = pixel count
 ; Returns:  none
-vga_NSETCX proc near
+vga_NSETCX proc near private
 
     push ax
     push cx
@@ -6706,7 +6706,7 @@ vga_NSETCX endp
 ;           If C set:
 ;           AL = index to a drawing routine (0-4)
 ;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
-vga_PGINIT proc near
+vga_PGINIT proc near private
 
     mov blit_addr, bx
     mov blit_bits, cx
@@ -6728,7 +6728,7 @@ vga_PGINIT endp
 ; Returns: none in registers
 ;          main memory address advanced to next line
 ;          pixels read in packed form into main memory
-vga_NREAD proc near
+vga_NREAD proc near private
 
     push ax
     push cx
@@ -6762,7 +6762,7 @@ vga_NREAD endp
 ; On entry: PGINIT complete
 ; Returns: none in registers
 ;          local memory address advanced to the next line
-vga_NWRITE proc near
+vga_NWRITE proc near private
 
     push ax
     push cx
@@ -6838,7 +6838,7 @@ vga_NWRITE endp
 ; Set up flood fill algorithm
 ; On entry: AL = border attribute
 ; Returns: C set if error
-vga_PNTINI proc near
+vga_PNTINI proc near private
 
     mov border_attr, al
     clc
@@ -6850,7 +6850,7 @@ vga_PNTINI endp
 ; Returns: C set if moving down would pass the bottom of the screen;
 ;          the current position is unchanged in that case
 ; This differs from DOWNC only in the boundary check
-vga_TDOWNC proc near
+vga_TDOWNC proc near private
 
     cmp video_pos, 64000 - 320
     jae @bounds
@@ -6867,7 +6867,7 @@ vga_TDOWNC endp
 ; Returns: C set if moving up would pass the top of the screen;
 ;          the current position is unchanged in that case
 ; This differs from UPC only in the boundary check
-vga_TUPC proc near
+vga_TUPC proc near private
 
     cmp video_pos, 320
     jb @bounds
@@ -6890,7 +6890,7 @@ vga_TUPC endp
 ;           CSAVEA and CSAVEM set to the point where drawing began, in the
 ;           format returned by FETCHC
 ;           Current position updated
-vga_SCANR proc near
+vga_SCANR proc near private
 
     push ax
     push si
@@ -6969,7 +6969,7 @@ vga_SCANR endp
 ;           BX = number of pixels painted
 ;           CL != 0 if at least one pixel changed
 ;           Current position updated
-vga_SCANL proc near
+vga_SCANL proc near private
 
     push ax
     push si
