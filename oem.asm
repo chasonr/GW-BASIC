@@ -51,6 +51,19 @@ GWINI proc near
     xor al, al
     call set_screen_mode
 
+    ; Set INT 1Bh
+    mov ax, 351Bh
+    int 21h
+    mov word ptr old_int1B+0, bx
+    mov word ptr old_int1B+2, es
+    push ds
+    mov dx, cs
+    mov ds, dx
+    mov dx, offset int1B_handler
+    mov ax, 251Bh
+    int 21h
+    pop ds
+
     pop es
     pop cx
     pop bx
@@ -104,6 +117,14 @@ GWTERM proc near
     push ax
     push bx
     push cx
+    push dx
+
+    ; Remove INT 1Bh handler
+    push ds
+    lds dx, old_int1B
+    mov ax, 251Bh
+    int 21h
+    pop ds
 
     ; Set blink mode back to starting state
     mov bl, blink_flag
@@ -133,12 +154,25 @@ GWTERM proc near
             int 10h
     @end_video:
 
+    pop dx
     pop cx
     pop bx
     pop ax
     ret
 
 GWTERM endp
+
+; INT 1Bh handler
+int1B_handler proc near private
+
+    push ds
+    mov ds, cs:BASIC_DS
+    or event_flag, event_ctrlbreak
+    pop ds
+    jmp cs:old_int1B
+
+int1b_handler endp
+old_int1B dd ?
 
 ;-----------------------------------------------------------------------------
 ; Keyboard support
@@ -154,6 +188,17 @@ GWTERM endp
 ;               C clear, AL == 0xFE: two byte code in DX (DH = 0, DL = scan code)
 PUBLIC KEYINP
 KEYINP proc near
+
+    ; Check for Ctrl-Break
+    test event_flag, event_ctrlbreak
+    je @F
+        ; Return CTRL-C
+        and event_flag, not event_ctrlbreak
+        mov ax, 0FF03h
+        or ax, ax
+        stc
+        ret
+    @@:
 
     ; Check for an available key
     mov ah, 01h
@@ -7174,8 +7219,13 @@ SNDLPT:
 ; Returns:  BX = value selected by functions 0-9
 ;           None for 0xFE and 0xFF
 PUBLIC RDPEN
-RDPEN:
-    INT 3
+RDPEN proc near
+
+    ; TODO: Stub; this gets called if POLLEV returns Z clear
+    xor bx, bx
+    ret
+
+RDPEN endp
 
 ;-----------------------------------------------------------------------------
 ; Joystick support
@@ -7209,9 +7259,9 @@ RDSTIK:
 PUBLIC POLLEV
 POLLEV proc near
 
-    ; TODO: stub; no events currently supported
     push ax
-    xor ax, ax
+    mov ax, event_flag
+    or ax, ax
     pop ax
     ret
 
@@ -7306,6 +7356,10 @@ ega_blit_plane db ?
 ega_blit_pixels dw ?
 ; EGA: Bits written to the caller's array
 ega_blit_bits dw ?
+
+; Event flag
+event_flag dw 0
+event_ctrlbreak = 0001h
 
 DSEG ends
 
