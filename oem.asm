@@ -30,7 +30,7 @@ COM_tx_size = 128 ; Size of transmit buffer
 ; here.
 PUBLIC GWINI
 ; TODO: Query video hardware and determine supported modes.
-; For now, we support only text mode in 80x25.
+; For now, text mode is 40x25 or 80x25.
 GWINI proc near
 
     push ax
@@ -804,7 +804,7 @@ screen_mode_0 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw mode_0_SCROUT          ; SCROUT_handler
     dw mode_0_SCRINP          ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw mode_0_SCROLL          ; SCROLL_handler
     dw generic_CLRSCN         ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -2509,6 +2509,122 @@ mode_0_SCRINP proc near private
     ret
 
 mode_0_SCRINP endp
+
+; Scroll window beginning at column AH, row AL,
+; extending through CH columns and CL rows,
+; to column BH, row BL
+; Rows and columns begin at 1
+; Returns: None
+mode_0_SCROLL proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    ; Convert coordinates to 0-based
+    dec ah
+    dec al
+    dec bh
+    dec bl
+
+    ; Set up the scrolling:
+    ; Save the registers
+    mov scroll_c1, ah
+    mov scroll_r1, al
+    mov scroll_c2, bh
+    mov scroll_r2, bl
+    mov scroll_width, ch
+    mov scroll_height, cl
+
+    ; Convert coordinates to addresses:
+    mov bh, active_page
+    rol bh, 1
+    rol bh, 1
+    rol bh, 1
+    rol bh, 1
+    mov cl, text_width
+    ; convert scroll_from
+    mov al, scroll_r1
+    mul cl
+    mov bl, scroll_c1
+    add ax, bx
+    shl ax, 1
+    mov scroll_from, ax
+    ; convert scroll_to
+    mov al, scroll_r2
+    mul cl
+    mov bl, scroll_c2
+    add ax, bx
+    shl ax, 1
+    mov scroll_to, ax
+
+    ; Address the frame buffer
+    mov es, video_seg
+
+    ; Which way are we scrolling?
+    cmp ax, scroll_from
+    jae @scroll_higher
+        ; Scroll from higher to lower address
+        cld
+        mov dl, scroll_height
+        @scroll_1:
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsw es:[di], es:[si]
+            mov al, text_width
+            xor ah, ah
+            shl ax, 1
+            add scroll_from, ax
+            add scroll_to, ax
+        dec dl
+        jnz @scroll_1
+    jmp @scroll_end
+    @scroll_higher:
+        ; Scroll from lower to higher address
+        ; Point starting addresses to last cell to scroll
+        mov al, scroll_height   ; AX <- (((scroll_height-1)*text_width)+(scroll_width-1))*2
+        dec al
+        mul text_width
+        add al, scroll_width
+        adc ah, 0
+        dec ax
+        shl ax, 1
+        add scroll_from, ax
+        add scroll_to, ax
+        ; Begin loop
+        std
+        mov dl, scroll_height
+        @scroll_2:
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsw es:[di], es:[si]
+            mov al, text_width
+            xor ah, ah
+            shl ax, 1
+            sub scroll_from, ax
+            sub scroll_to, ax
+        dec dl
+        jnz @scroll_2
+    @scroll_end:
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+mode_0_SCROLL endp
 
 ; Read attribute at requested position
 ; On entry: AL = column (1 = left)
@@ -6795,6 +6911,16 @@ x_coordinate dw ?
 text_width db ?
 ; Height of text screen in rows
 text_height db ?
+
+; Variables used for scrolling
+scroll_r1 db ?
+scroll_c1 db ?
+scroll_r2 db ?
+scroll_c2 db ?
+scroll_width db ?
+scroll_height db ?
+scroll_from dw ?
+scroll_to dw ?
 
 ; Shape of text cursor set by CSRDSP
 cursor_shape dw 0B0Dh ; Initially in overwrite mode
