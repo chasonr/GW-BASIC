@@ -1154,7 +1154,7 @@ screen_mode_13 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw vga_SCROLL             ; SCROLL_handler
     dw vga_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -2019,68 +2019,6 @@ generic_SCRINP proc near private
     ret
 
 generic_SCRINP endp
-
-; Scroll window beginning at column AH, row AL,
-; extending through CH columns and CL rows,
-; to column BH, row BL
-; Rows and columns begin at 1
-; Returns: None
-generic_SCROLL proc near private
-
-    push ax
-    push bx
-    push cx
-    push dx
-
-    ; Make all coordinates 0-based
-    dec ah
-    dec al
-    dec bh
-    dec bl
-
-    ; Scroll vertically
-    ; AH <- left; BH <- max(AH, BH)
-    cmp ah, bh
-    jb @F
-        xchg ah, bh
-    @@:
-    ; BH <- right
-    add bh, ch
-    dec bh
-    ; DH <- BIOS function
-    mov dh, 06h ; scroll up
-    mov dl, al
-    sub dl, bl
-    jnc @F
-        mov dh, 07h ; scroll down
-        neg dl
-        xchg al, bl
-    @@:
-    ; BL = top
-    ; AL <- bottom
-    add al, cl
-    dec al
-
-    ; Have: AH = left; BL = top; BH = right; AL = bottom; DL = distance; DH = function
-    ; Want: CL = left; CH = top; DL = right, DH = bottom; AL = distance; AH = function
-    mov ch, bl  ; CH <- top
-    mov cl, ah  ; CL <- left
-    mov ah, dh  ; AH <- function
-    mov dh, al  ; DH <- bottom
-    mov al, dl  ; AL <- distance
-    mov dl, bh  ; DL <- right
-    mov bh, 07h ; attribute
-    int 10h
-
-    ; TODO: scroll horizontally
-
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-generic_SCROLL endp
 
 ; Clear the screen or the text window
 ; On entry: If the CLS statement has a parameter, C is set and the parameter
@@ -6214,6 +6152,130 @@ vga_SCRSTT_init proc near private
     ret
 
 vga_SCRSTT_init endp
+
+; Scroll window beginning at column AH, row AL,
+; extending through CH columns and CL rows,
+; to column BH, row BL
+; Rows and columns begin at 1
+; Returns: None
+vga_SCROLL proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    ; Convert coordinates to 0-based
+    dec ah
+    dec al
+    dec bh
+    dec bl
+
+    ; Set up the scrolling:
+    ; Save the registers
+    mov scroll_c1, ah
+    mov scroll_r1, al
+    mov scroll_c2, bh
+    mov scroll_r2, bl
+    shl ch, 1
+    shl ch, 1
+    mov scroll_width, ch  ; as word count per line
+    shl cl, 1
+    shl cl, 1
+    shl cl, 1
+    mov scroll_height, cl ; as line count
+
+    ; Convert coordinates to addresses
+    ; addr = row*320*8 + col*8
+    mov bl, 160
+    mov al, scroll_r1
+    mul bl
+    shl ax, 1
+    add al, scroll_c1
+    adc ah, 0
+    shl ax, 1
+    shl ax, 1
+    shl ax, 1
+    mov scroll_from, ax
+    mov al, scroll_r2
+    mul bl
+    shl ax, 1
+    add al, scroll_c2
+    adc ah, 0
+    shl ax, 1
+    shl ax, 1
+    shl ax, 1
+    mov scroll_to, ax
+
+    ; Address the frame buffer
+    mov es, video_seg
+
+    ; Which way are we scrolling?
+    cmp ax, scroll_from
+    jae @scroll_higher
+        ; Scroll from higher to lower address
+        cld
+        mov dl, scroll_height
+        @scroll_1:
+            ; Scroll a line
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsw es:[di], es:[si]
+            ; Go to next line
+            mov ax, 320
+            add scroll_from, ax
+            add scroll_to, ax
+        dec dl
+        jnz @scroll_1
+    jmp @scroll_end
+    @scroll_higher:
+        ; Scroll from lower to higher address
+        ; Point starting addresses to last cell to scroll
+        mov al, scroll_height   ; AX <- ((scroll_height-1)*320)+(scroll_width-1)*2
+        dec al
+        mov cl, 160
+        mul cl
+        shl ax, 1
+        mov cl, scroll_width
+        xor ch, ch
+        dec cx
+        shl cx, 1
+        add ax, cx
+        add scroll_from, ax
+        add scroll_to, ax
+        ; Begin loop
+        std
+        mov dl, scroll_height
+        @scroll_2:
+            ; Scroll a line
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsw es:[di], es:[si]
+            ; Go to next line
+            mov ax, 320
+            sub scroll_from, ax
+            sub scroll_to, ax
+        dec dl
+        jnz @scroll_2
+    @scroll_end:
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+vga_SCROLL endp
 
 ; Clear the screen or the text window
 ; On entry: If the CLS statement has a parameter, C is set and the parameter
