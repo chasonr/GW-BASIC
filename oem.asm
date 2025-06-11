@@ -854,7 +854,7 @@ screen_mode_1 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw cga_SCROLL             ; SCROLL_handler
     dw cga_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -904,7 +904,7 @@ screen_mode_2 label word
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
-    dw generic_SCROLL         ; SCROLL_handler
+    dw cga_SCROLL             ; SCROLL_handler
     dw cga_CLRSCN             ; CLRSCN_handler
     dw generic_CLREOL         ; CLREOL_handler
     dw generic_CSRATR         ; CSRATR_handler
@@ -2891,6 +2891,143 @@ mode_1_SCRSTT_color proc near private
     ret
 
 mode_1_SCRSTT_color endp
+
+; Scroll window beginning at column AH, row AL,
+; extending through CH columns and CL rows,
+; to column BH, row BL
+; Rows and columns begin at 1
+; Returns: None
+cga_SCROLL proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    ; Convert coordinates to 0-based
+    dec ah
+    dec al
+    dec bh
+    dec bl
+
+    ; Set up the scrolling:
+    ; Save the registers
+    mov scroll_c1, ah
+    mov scroll_r1, al
+    mov scroll_c2, bh
+    mov scroll_r2, bl
+    mov scroll_width, ch
+    shl cl, 1
+    shl cl, 1
+    mov scroll_height, cl ; as line count per bank
+
+    ; Convert coordinates to addresses
+    mov cl, 160
+    mov al, scroll_r1
+    mul cl
+    shl ax, 1
+    mov scroll_from, ax
+    mov al, scroll_r2
+    mul cl
+    shl ax, 1
+    mov scroll_to, ax
+    mov al, scroll_c1
+    xor ah, ah
+    mov bl, scroll_c2
+    xor bh, bh
+    cmp cs:Screen_Mode.pixel_size[di], 1
+    je @F
+        ; Mode 2
+        shl ax, 1
+        shl bx, 1
+        shl scroll_width, 1 ; as byte count
+    @@:
+    add scroll_from, ax
+    add scroll_to, bx
+
+    ; Address the frame buffer
+    mov es, video_seg
+
+    ; Which way are we scrolling?
+    mov ax, scroll_to
+    cmp ax, scroll_from
+    jae @scroll_higher
+        ; Scroll from higher to lower address
+        cld
+        mov dl, scroll_height
+        @scroll_1:
+            ; Scroll an even line
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsb es:[di], es:[si]
+            ; Scroll an odd line
+            mov si, scroll_from
+            mov di, scroll_to
+            add si, 2000h
+            add di, 2000h
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsb es:[di], es:[si]
+            ; Go to next line
+            mov ax, 80
+            add scroll_from, ax
+            add scroll_to, ax
+        dec dl
+        jnz @scroll_1
+    jmp @scroll_end
+    @scroll_higher:
+        ; Scroll from lower to higher address
+        ; Point starting addresses to last cell to scroll
+        mov al, scroll_height   ; AX <- ((scroll_height-1)*80)+(scroll_width-1)
+        dec al
+        mov cl, 80
+        mul cl
+        add al, scroll_width
+        adc ah, 0
+        dec ax
+        add scroll_from, ax
+        add scroll_to, ax
+        ; Begin loop
+        std
+        mov dl, scroll_height
+        @scroll_2:
+            ; Scroll an even line
+            mov si, scroll_from
+            mov di, scroll_to
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsb es:[di], es:[si]
+            ; Scroll an odd line
+            mov si, scroll_from
+            mov di, scroll_to
+            add si, 2000h
+            add di, 2000h
+            mov cl, scroll_width
+            xor ch, ch
+            rep movsb es:[di], es:[si]
+            ; Go to next line
+            mov ax, 80
+            sub scroll_from, ax
+            sub scroll_to, ax
+        dec dl
+        jnz @scroll_2
+    @scroll_end:
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+cga_SCROLL endp
 
 ; Clear the screen or the text window
 ; On entry: If the CLS statement has a parameter, C is set and the parameter
