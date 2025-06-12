@@ -7140,8 +7140,13 @@ SETCBF endp
 ; On error:  AH = 0xFF: BASIC signals "Illegal file name"
 ;                       Otherwise same as STACOM
 PUBLIC INICOM
-INICOM:
-    INT 3
+INICOM proc near
+
+    ; Stub: COMx ports not implemented
+    mov ah, 0FFh
+    ret
+
+INICOM endp
 
 ; Receive a byte from a COMx port
 ; On entry:   AH = unit number; 0 for COM1, 1 for COM2
@@ -7150,8 +7155,13 @@ INICOM:
 ;             AL = byte received
 ; On error:   AH = nonzero error code, as for STACOM
 PUBLIC RECCOM
-RECCOM:
-    INT 3
+RECCOM proc near
+
+    ; Stub: COMx ports not implemented
+    mov ah, 03h ; Timeout
+    ret
+
+RECCOM endp
 
 ; Query status of COMx port
 ; On entry:   AH = unit number; 0 for COM1, 1 for COM2
@@ -7164,8 +7174,13 @@ RECCOM:
 ;                  3, 4, 5 = device timeout
 ;                  others are mapped to "I/O error"
 PUBLIC STACOM
-STACOM:
-    INT 3
+STACOM proc near
+
+    ; Stub: COMx ports not implemented
+    mov ah, 03h ; Timeout
+    ret
+
+STACOM endp
 
 ; Send a byte to a COMx port
 ; On entry:   AH = unit number; 0 for COM1, 1 for COM2
@@ -7173,16 +7188,26 @@ STACOM:
 ; On return:  AH = 0
 ; On error:   AH = nonzero error code, as for STACOM
 PUBLIC SNDCOM
-SNDCOM:
-    INT 3
+SNDCOM proc near
+
+    ; Stub: COMx ports not implemented
+    mov ah, 03h ; Timeout
+    ret
+
+SNDCOM endp
 
 ; End access to a COMx port
 ; On entry:   AH = unit number; 0 for COM1, 1 for COM2
 ; On return:  AH = 0
 ; On error:   AH = nonzero error code, as for STACOM
 PUBLIC TRMCOM
-TRMCOM:
-    INT 3
+TRMCOM proc near
+
+    ; Stub: COMx ports not implemented
+    xor ah, ah
+    ret
+
+TRMCOM endp
 
 ;-----------------------------------------------------------------------------
 ; Support for LPTx ports
@@ -7198,8 +7223,52 @@ TRMCOM:
 ;           3: Out of paper
 ;           others: I/O error
 PUBLIC SNDLPT
-SNDLPT:
-    INT 3
+SNDLPT proc near
+
+    ; Ralf Brown Interrupt List: "Some print spoolers trash the BX register
+    ; on return."
+    push bx
+    push dx
+
+    mov dl, ah  ; Set device number
+    xor dh, dh
+    xor ah, ah
+    int 17h
+
+    ; Convert returned status to error in BASIC
+    xor al, al
+    test ah, 80h
+    jne @F
+        mov al, 1   ; Device unavailable
+        jmp @end
+    @@:
+    test ah, 20h
+    je @F
+        mov al, 3   ; Out of paper
+        jmp @end
+    @@:
+    test ah, 08h
+    je @F
+        mov al, 4   ; I/O error
+        jmp @end
+    @@:
+    test ah, 01h
+    je @F
+        mov al, 2   ; Timeout
+        jmp @end
+    @@:
+
+@end:
+    mov ah, al
+    pop dx
+    pop bx
+    ret
+
+SNDLPT endp
+
+;-----------------------------------------------------------------------------
+; Support for a light pen
+;-----------------------------------------------------------------------------
 
 ; Perform light pen functions
 ; On entry: AL selects the function
@@ -7237,18 +7306,26 @@ RDPEN endp
 ;           AL = index of button to read
 ; Returns:  AL = 1 if the button is or was pressed, else 0
 PUBLIC RDTRIG
-RDTRIG:
-    INT 3
+RDTRIG proc near
+
+    ; TODO: Stub; joysticks not yet implemented
+    xor al, al
+    ret
+
+RDTRIG endp
 
 ; Read a joystick axis
 ; On entry: AL = joystick axis to read
 ; Returns:  C clear if success
 ;           BX = joystick axis as a signed integer
-; This implementation expects AL=0 to be called first. It will query all axes
-; on AL=0, and return their state when called with AL != 0.
 PUBLIC RDSTIK
-RDSTIK:
-    INT 3
+RDSTIK proc near
+
+    ; TODO: Stub; joysticks not yet implemented
+    stc
+    ret
+
+RDSTIK endp
 
 ;-----------------------------------------------------------------------------
 ; Event support
