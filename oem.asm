@@ -817,6 +817,7 @@ Screen_Mode struc
     y_res          dw ? ; Y pixel resolution
     width_height   dw ? ; Pixel width over pixel height as 8.8 fixed
     height_width   dw ? ; Pixel height over pixel width as 8.8 fixed
+    page_size      db ? ; Size of a page is 2 to this power
     num_pages      db ? ; Number of supported pages
     pixel_size     db ? ; Number of bits per pixel
     bios_mode      db ? ; BIOS video mode
@@ -882,12 +883,13 @@ screen_mode_0 label word
     dw graphics_stub          ; TUPC_handler
     dw graphics_stub          ; SCANR_handler
     dw graphics_stub          ; SCANL_handler
-    db 80                     ; text_columns
+    db 80                     ; text_columns (actually may be 40)
     db 25                     ; text_rows
     dw 640                    ; x_res
     dw 400                    ; y_res
     dw 0100h                  ; width_height
     dw 0100h                  ; height_width
+    db 12                     ; page_size (actually may be 2**11)
     db 8                      ; num_pages
     db 0                      ; pixel_size
     db 3                      ; bios_mode (actually 0-3 or 7)
@@ -938,7 +940,8 @@ screen_mode_1 label word
     dw 200                    ; y_res
     dw 00D5h                  ; width_height (0.833)
     dw 0133h                  ; height_width (1.200)
-    db 1                      ; num_pages
+    db 14                     ; page_size
+    db 2                      ; num_pages
     db 2                      ; pixel_size
     db 5                      ; bios_mode (actually 4 or 5)
 
@@ -988,7 +991,8 @@ screen_mode_2 label word
     dw 200                    ; y_res
     dw 006Bh                  ; width_height (0.4167)
     dw 0266h                  ; height_width (2.4000)
-    db 1                      ; num_pages
+    db 14                     ; page_size
+    db 2                      ; num_pages
     db 1                      ; pixel_size
     db 6                      ; bios_mode
 
@@ -1038,7 +1042,8 @@ screen_mode_7 label word
     dw 200                    ; y_res
     dw 00D5h                  ; width_height (0.833)
     dw 0133h                  ; height_width (1.200)
-    db 1                      ; num_pages
+    db 13                     ; page_size
+    db 8                      ; num_pages
     db 4                      ; pixel_size
     db 0Dh                    ; bios_mode
 
@@ -1088,7 +1093,8 @@ screen_mode_8 label word
     dw 200                    ; y_res
     dw 006Bh                  ; width_height (0.4167)
     dw 0266h                  ; height_width (2.4000)
-    db 1                      ; num_pages
+    db 14                     ; page_size
+    db 4                      ; num_pages
     db 4                      ; pixel_size
     db 0Eh                    ; bios_mode
 
@@ -1138,7 +1144,8 @@ screen_mode_9 label word
     dw 350                    ; y_res
     dw 00BBh                  ; width_height (0.729)
     dw 015Fh                  ; height_width (1.200)
-    db 1                      ; num_pages
+    db 15                     ; page_size
+    db 2                      ; num_pages
     db 4                      ; pixel_size
     db 10h                    ; bios_mode
 
@@ -1188,6 +1195,7 @@ screen_mode_12 label word
     dw 480                    ; y_res
     dw 0100h                  ; width_height (1.0)
     dw 0100h                  ; height_width (1.0)
+    db 0                      ; page_size
     db 1                      ; num_pages
     db 4                      ; pixel_size
     db 12h                    ; bios_mode
@@ -1238,6 +1246,7 @@ screen_mode_13 label word
     dw 200                    ; y_res
     dw 00D5h                  ; width_height (0.833)
     dw 0133h                  ; height_width (1.200)
+    db 0                      ; page_size
     db 1                      ; num_pages
     db 8                      ; pixel_size
     db 13h                    ; bios_mode
@@ -2508,48 +2517,26 @@ mode_0_SCROLL proc near private
     push di
     push es
 
-    ; Convert coordinates to 0-based
-    dec ah
-    dec al
-    dec bh
-    dec bl
-
     ; Set up the scrolling:
     ; Save the registers
-    mov scroll_c1, ah
-    mov scroll_r1, al
-    mov scroll_c2, bh
-    mov scroll_r2, bl
     mov scroll_width, ch
     mov scroll_height, cl
 
     ; Convert coordinates to addresses:
-    mov bh, active_page
-    rol bh, 1
-    rol bh, 1
-    rol bh, 1
-    rol bh, 1
-    mov cl, text_width
-    ; convert scroll_from
-    mov al, scroll_r1
-    mul cl
-    mov bl, scroll_c1
-    add ax, bx
-    shl ax, 1
-    mov scroll_from, ax
-    ; convert scroll_to
-    mov al, scroll_r2
-    mul cl
-    mov bl, scroll_c2
-    add ax, bx
-    shl ax, 1
-    mov scroll_to, ax
+    mov dx, ax
+    call mode_0_xy_to_address
+    jc @end
+    mov scroll_from, di
+    mov dx, bx
+    call mode_0_xy_to_address
+    jc @end
+    mov scroll_to, di
 
     ; Address the frame buffer
     mov es, video_seg
 
     ; Which way are we scrolling?
-    cmp ax, scroll_from
+    cmp di, scroll_from
     jae @scroll_higher
         ; Scroll from higher to lower address
         cld
@@ -2598,6 +2585,7 @@ mode_0_SCROLL proc near private
         jnz @scroll_2
     @scroll_end:
 
+@end:
     pop es
     pop di
     pop si
@@ -2769,10 +2757,14 @@ mode_0_xy_to_address proc near private
     add di, ax          ; DI <- row*text_width + column
     shl di, 1           ; Two bytes per character
     mov ah, active_page ; Page on which we draw
+    shl ah, 1           ; shift left three, for page * 2048
+    shl ah, 1
+    shl ah, 1
+    cmp text_width, 80
+    jb @F
+        shl ah, 1       ; or four, for page * 4096
+    @@:
     mov al, 0           ; Load into high byte
-    repeat 4
-        shl ah, 1       ; shift left four, for page * 4096
-    endm
     add di, ax
     mov es, video_seg   ; Segment for color modes
     pop ax
