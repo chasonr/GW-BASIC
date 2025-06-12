@@ -941,7 +941,7 @@ screen_mode_1 label word
     dw 00D5h                  ; width_height (0.833)
     dw 0133h                  ; height_width (1.200)
     db 14                     ; page_size
-    db 2                      ; num_pages
+    db 1                      ; num_pages
     db 2                      ; pixel_size
     db 5                      ; bios_mode (actually 4 or 5)
 
@@ -992,7 +992,7 @@ screen_mode_2 label word
     dw 006Bh                  ; width_height (0.4167)
     dw 0266h                  ; height_width (2.4000)
     db 14                     ; page_size
-    db 2                      ; num_pages
+    db 1                      ; num_pages
     db 1                      ; pixel_size
     db 6                      ; bios_mode
 
@@ -1367,6 +1367,7 @@ SCRSTT endp
 ;          if C clear: DI points to new mode table
 set_screen_mode proc near private
 
+    push bx ; GRPINI clobbers it
     push cx
     push di
 
@@ -1385,15 +1386,22 @@ set_screen_mode proc near private
     call SCNSWI
     call GRPINI
     call SCNCLR
-    clc
 
+    ; Set the active page to 0
+    xor ax, ax
+    mov active_page, al
+    call cs:Screen_Mode.SCRSTT_actpage[di]
+
+    clc
     pop cx ; Discard saved DI
     pop cx
+    pop bx
     ret
 
 @error:
     pop di
     pop cx
+    pop bx
     stc
     ret
 
@@ -1971,6 +1979,19 @@ graphics_stub endp
 ; Set the active page
 generic_SCRSTT_actpage proc near private
 
+    push ax
+    push cx
+
+    mov cl, cs:Screen_Mode.page_size[di]
+    shl ax, cl
+    mov page_offset, ax
+    mov ax, 1
+    shl ax, cl
+    dec ax
+    mov page_bitmask, ax
+
+    pop cx
+    pop ax
     clc
     ret
 
@@ -2027,7 +2048,7 @@ generic_SCROUT proc near private
     call convert_cursor
     call set_cursor
     mov ah, 09h
-    mov bh, 0
+    mov bh, active_page
     mov bl, text_attr
     mov cx, 1
     int 10h
@@ -4623,6 +4644,7 @@ ega_SCROLL proc near private
     mul cx              ; bytes per text row
     add al, scroll_c1
     adc ah, 0
+    add ax, page_offset
     mov scroll_from, ax
 
     mov al, scroll_r2
@@ -4630,6 +4652,7 @@ ega_SCROLL proc near private
     mul cx              ; bytes per text row
     add al, scroll_c2
     adc ah, 0
+    add ax, page_offset
     mov scroll_to, ax
 
     ; Address the frame buffer
@@ -4739,7 +4762,7 @@ ega_CLRSCN proc near private
 
         ; Fill
         mov es, video_seg
-        xor di, di
+        mov di, page_offset
         xor ax, ax
         cld
         rep stosw
@@ -4801,6 +4824,7 @@ ega_CSRDSP proc near private
     xor bh, bh
     mul bx
     add si, ax  ; SI = address
+    add si, page_offset
     mov es, video_seg
 
     ; Set up EGA registers for XOR operation
@@ -5028,13 +5052,17 @@ ega_SETFBC endp
 ega_STOREC proc near private
 
     push ax
+    push bx
     push dx
 
+    and bx, page_bitmask
+    add bx, page_offset
     mov video_pos, bx
     mov video_bitmask, al
 
     ; Recover the X coordinate
     mov ax, bx
+    and ax, page_bitmask
     mov bx, cs:Screen_Mode.x_res[di]
     shr bx, 1
     shr bx, 1
@@ -5061,6 +5089,7 @@ ega_STOREC proc near private
     mov x_coordinate, dx
 
     pop dx
+    pop bx
     pop ax
     ret
 
@@ -5161,6 +5190,7 @@ ega_MAPXYC proc near private
     ; video_pos <- AX*y + x/8
     mul dx
     add ax, bx
+    add ax, page_offset
     mov video_pos, ax
 
     pop dx
@@ -5737,9 +5767,12 @@ ega_TDOWNC proc near private
     shr ax, 1
     mov bx, ax                      ; BX <- x_res/8
     mul cs:Screen_Mode.y_res[di]    ; AX <- (x_res/8)*y_res
-    add bx, video_pos               ; BX <- new position
+    mov dx, video_pos
+    and dx, page_bitmask
+    add bx, dx                      ; BX <- new position
     cmp ax, bx                      ; Set C if off the bottom edge
     jc @F
+        add bx, page_offset
         mov video_pos, bx
     @@:
 
@@ -5763,8 +5796,10 @@ ega_TUPC proc near private
     shr ax, 1
     shr ax, 1
     mov bx, video_pos
+    and bx, page_bitmask
     sub bx, ax
     jc @F
+        add bx, page_offset
         mov video_pos, bx
     @@:
     pop bx
@@ -7405,6 +7440,8 @@ max_line db 0
 ; Active page (where we draw) and visible page (what we see)
 active_page db 0
 visible_page db 0
+page_bitmask dw 0
+page_offset dw 0
 
 ; Bit-blit parameters
 blit_addr dw ?
