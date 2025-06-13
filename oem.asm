@@ -263,49 +263,31 @@ SEGINI proc near
 
     push ax
     push bx
-    push cx
     push es
 
     ; Save the DS for interrupt handlers
     mov BASIC_DS, ds
 
     ; Free memory beyond what the DS needs
-    ; Assumes that the stack might extend 256 bytes beyond SP, or to the end
-    ; of the DS if that is less
+    ; Allow the DS to be 64K if available memory permits
 
     ; BX <- current PSP
     mov ah, 51h
     int 21h
 
-    ; SP to paragraph
-    mov cx, sp
-    add cx, 0Fh
-    rcr cx, 1
-    shr cx, 1
-    shr cx, 1
-    shr cx, 1
-    ; Allow 256 bytes plus a few more for this routine's use...
-    add cx, 11h
-    cmp cx, 1000h
-    jb @F
-        ; ...but DS will never exceed 65536 bytes
-        mov cx, 1000h
-    @@:
-
     ; DS minus PSP is the size of everything before the DS; add this to the
     ; block size
     mov ax, ds
     sub ax, bx
-    add cx, ax
+    add ax, 65536/16
 
     ; Arrange as needed to resize the block
     mov es, bx  ; PSP
-    mov bx, cx  ; size in paragraphs
+    mov bx, ax  ; size in paragraphs
     mov ah, 4Ah
     int 21h
 
     pop es
-    pop cx
     pop bx
     pop ax
     ret
