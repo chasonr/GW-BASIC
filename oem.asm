@@ -29,8 +29,6 @@ COM_tx_size = 128 ; Size of transmit buffer
 ; support may be available. Any interrupt handlers needed can be installed
 ; here.
 PUBLIC GWINI
-; TODO: Query video hardware and determine supported modes.
-; For now, text mode is 40x25 or 80x25.
 GWINI proc near
 
     push ax
@@ -38,14 +36,19 @@ GWINI proc near
     push cx
     push es
 
+    call disp_check
+
     ; If we have an EGA or VGA, set blink mode
-    mov bx, 0040h
-    mov es, bx
-    mov al, es:[0065h]
-    mov blink_flag, al ; to restore on exit
-    mov bl, 1
-    mov ax, 1003h
-    int 10h
+    test disp_installed, disp_ega
+    je @F
+        mov bx, 0040h
+        mov es, bx
+        mov al, es:[0065h]
+        mov blink_flag, al ; to restore on exit
+        mov bl, 1
+        mov ax, 1003h
+        int 10h
+    @@:
 
     ; Set up screen mode 0
     xor al, al
@@ -71,6 +74,153 @@ GWINI proc near
     ret
 
 GWINI endp
+
+; Identify the display adapter
+disp_check proc near private
+
+    push ax
+    push bx
+    push dx
+    push es
+
+    ; Clear the installation flags
+    mov disp_installed, 0
+    mov herc_size, 0
+
+    ; Look for an expansion ROM at C000:0000
+    mov ax, 0C000h
+    mov es, ax
+    cmp word ptr es:[0], 0AA55h
+    jne @no_rom
+        ; Check for installed VGA
+        mov ax, 1A00h
+        int 10h
+        cmp al, 1Ah
+        jne @ega
+        cmp bl, 7
+        jb @ega
+        cmp bl, 8
+        ja @ega
+            ; VGA adapter installed
+            mov disp_installed, disp_vga or disp_ega or disp_cga
+        jmp @end_ega
+        @ega:
+            ; EGA adapter installed
+            mov disp_installed, disp_ega or disp_cga
+        @end_ega:
+    jmp @end
+    @no_rom:
+        ; Check for a CRTC at 03D4
+        mov dx, 03D4h
+        call check_crtc
+        jnc @end_cga
+            mov disp_installed, disp_cga
+        @end_cga:
+        ; Check for a CRTC at 03B4
+        ; A CGA may be installed alongside an MDA or 32K Hercules
+        mov dx, 03B4h
+        call check_crtc
+        jnc @end_mda
+            or disp_installed, disp_mda
+        @end_mda:
+        ; An MDA has a 4K frame buffer mirrored through the 32K space at
+        ; B000:0000. A Hercules card actually has 32K or 64K of memory.
+        ; It will only have 32K if a CGA is also installed.
+
+        mov ax, 0B000h
+        mov es, ax
+        mov bx, 04000h
+        call check_framebuf
+        jnc @end_hercules
+            mov herc_size, 32
+            test disp_installed, disp_cga
+            jnz @end_hercules
+                ; Hercules with at least 32K is installed and no CGA.
+                ; Look for a 64K frame buffer.
+                mov bx, 08000h
+                call check_framebuf
+                jnc @end_hercules
+                    mov herc_size, 64
+        @end_hercules:
+    @end:
+
+    pop es
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+disp_check endp
+
+; Look for a CRTC at the port at DX
+; Return C set if found
+check_crtc proc near private
+
+    ; Check for the presence of the index register; this will not disturb the
+    ; operation of the device
+    mov al, 05h
+    out dx, al
+    jmp short $+2
+    in al, dx
+    jmp short $+2
+    cmp al, 05h
+    jne @no_crtc
+
+    mov al, 0Ah
+    out dx, al
+    jmp short $+2
+    in al, dx
+    jmp short $+2
+    cmp al, 0Ah
+    jne @no_crtc
+
+    ; Check is good
+    stc
+    ret
+
+    ; Something didn't match
+@no_crtc:
+    clc
+    ret
+
+check_crtc endp
+
+; Check that the frame buffer at segment ES extends at least to the address
+; in BX
+; BX is a power of two, so any mirroring will show up at address 0
+check_framebuf proc near private
+
+    ; Save bytes at 0 and BX
+    mov dh, es:[0]
+    mov dl, es:[bx]
+
+    ; Change the byte at BX
+    mov al, dl
+    not al
+    mov es:[bx], al
+    cmp es:[bx], al
+    jne @no_mem     ; What we wrote didn't come back
+
+    ; Invert the byte at 0 and write to BX.
+    ; If the byte appears at 0, the frame buffer is mirrored.
+    mov al, dh
+    not al
+    mov es:[bx], al
+    cmp es:[0], al
+    je @no_mem      ; Mirroring found
+
+    ; Frame buffer is good
+    mov es:[bx], dl
+    clc
+    ret
+
+    ; No memory, or mirroring
+@no_mem:
+    mov es:[bx], dl
+    stc
+    ret
+
+check_framebuf endp
 
 ; Get OEM header string
 ; On entry: none
@@ -127,32 +277,23 @@ GWTERM proc near
     pop ds
 
     ; Set blink mode back to starting state
-    mov bl, blink_flag
-    mov cl, 5
-    shr bl, cl
-    and bl, 1
-
-    mov ax, 1003h
-    int 10h
+    test disp_installed, disp_ega
+    je @F
+        mov bl, blink_flag
+        mov cl, 5
+        shr bl, cl
+        and bl, 1
+        mov ax, 1003h
+        int 10h
+    @@:
 
     ; Return to 80 column text mode
-    mov ah, 0Fh     ; Do this if not already 80 column text
+    mov ax, 0007h
+    test disp_installed, disp_cga
+    je @F
+        mov ax, 0003h
+    @@:
     int 10h
-    cmp al, 02h
-    je @end_video
-    cmp al, 03h
-    je @end_video
-    cmp al, 07h
-    je @end_video
-        mov ax, 0003h   ; CGA 80 column mode
-        int 10h
-        mov ah, 0Fh
-        int 10h
-        cmp al, 03h     ; Did it work?
-        je @end_video
-            mov ax, 0007h ; Monochrome 80 column mode
-            int 10h
-    @end_video:
 
     pop dx
     pop cx
@@ -821,6 +962,7 @@ Screen_Mode struc
     num_pages      db ? ; Number of supported pages
     pixel_size     db ? ; Number of bits per pixel
     bios_mode      db ? ; BIOS video mode
+    display        db ? ; Display type required
 Screen_Mode ends
 
 ; Table of supported screen modes
@@ -893,6 +1035,7 @@ screen_mode_0 label word
     db 8                      ; num_pages
     db 0                      ; pixel_size
     db 3                      ; bios_mode (actually 0-3 or 7)
+    db disp_mda or disp_cga   ; display
 
 screen_mode_1 label word
     dw mode_1_SCRSTT_init     ; SCRSTT_init
@@ -944,6 +1087,7 @@ screen_mode_1 label word
     db 1                      ; num_pages
     db 2                      ; pixel_size
     db 5                      ; bios_mode (actually 4 or 5)
+    db disp_cga               ; display
 
 screen_mode_2 label word
     dw mode_2_SCRSTT_init     ; SCRSTT_init
@@ -995,6 +1139,7 @@ screen_mode_2 label word
     db 1                      ; num_pages
     db 1                      ; pixel_size
     db 6                      ; bios_mode
+    db disp_cga               ; display
 
 screen_mode_7 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
@@ -1046,6 +1191,7 @@ screen_mode_7 label word
     db 8                      ; num_pages
     db 4                      ; pixel_size
     db 0Dh                    ; bios_mode
+    db disp_ega               ; display
 
 screen_mode_8 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
@@ -1097,6 +1243,7 @@ screen_mode_8 label word
     db 4                      ; num_pages
     db 4                      ; pixel_size
     db 0Eh                    ; bios_mode
+    db disp_ega               ; display
 
 screen_mode_9 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
@@ -1148,6 +1295,7 @@ screen_mode_9 label word
     db 2                      ; num_pages
     db 4                      ; pixel_size
     db 10h                    ; bios_mode
+    db disp_ega               ; display
 
 screen_mode_12 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
@@ -1199,6 +1347,7 @@ screen_mode_12 label word
     db 1                      ; num_pages
     db 4                      ; pixel_size
     db 12h                    ; bios_mode
+    db disp_vga               ; display
 
 screen_mode_13 label word
     dw vga_SCRSTT_init        ; SCRSTT_init
@@ -1250,6 +1399,7 @@ screen_mode_13 label word
     db 1                      ; num_pages
     db 8                      ; pixel_size
     db 13h                    ; bios_mode
+    db disp_vga               ; display
 
 ; Most functions will use this macro to select the correct handler
 dispatch macro handler
@@ -1292,9 +1442,6 @@ SCRSTT proc near
     add bx, 2
     or al, al
     je @end_1
-        ; Determine if the mode is valid
-        cmp ah, mode_table_size
-        jae @error              ; invalid if outside of mode_table
         mov al, ah
         call set_screen_mode
         jc @error
@@ -1371,12 +1518,21 @@ set_screen_mode proc near private
     push cx
     push di
 
+    ; Determine if the mode is valid
+    cmp al, mode_table_size
+    jae @error              ; invalid if outside of mode_table
     xor ah, ah
     mov di, ax
     shl di, 1
     mov di, mode_table[di]
     or di, di
     jz @error               ; or if mode_table has 0
+
+    ; Check for required hardware
+    mov al, cs:Screen_Mode.display[di]
+    and al, disp_installed
+    jz @error
+
     ; Set up the mode
     call cs:Screen_Mode.SCRSTT_init[di]
     jc @error
@@ -2213,18 +2369,62 @@ generic_CSRDSP proc near private
     push cx
     push dx
 
-    ; TODO: For now, assume 16 line character
+    ; Determine lines per character
+    mov ah, disp_installed
+    test ah, disp_vga
+    je @check_ega
+        ; VGA: 16 line character
+        mov ah, 16
+    jmp @got_lines
+    @check_ega:
+    test ah, disp_ega
+    je @check_cga
+        ; EGA has 14 line characters, but scales the cursor height
+        mov ah, 8
+    jmp @got_lines
+    @check_cga:
+    test ah, disp_cga
+    je @set_mda
+        ; CGA: 8 line character
+        mov ah, 8
+    jmp @got_lines
+    @set_mda:
+        ; MDA or Hercules: 14 line character
+        mov ah, 14
+    @got_lines:
+
+    ; Determine the shape of the cursor
     cmp al, 0
     jne @F
-        mov cx, 1F1Fh ; start line 31, end line 31
+        mov cx, 1F1Fh ; start line 31, end line 31 (no cursor)
         jmp @set_cursor
     @@:
-    cmp al, 1
+    cmp ax, 8*256 + 1
+    jne @F
+        mov cx, 0007h ; start line 0, end line 7
+        jmp @set_cursor
+    @@:
+    cmp ax, 8*256 + 2
+    jne @F
+        mov cx, 0607h ; start line 6, end line 7
+        jmp @set_cursor
+    @@:
+    cmp ax, 14*256 + 1
     jne @F
         mov cx, 000Dh ; start line 0, end line 13
         jmp @set_cursor
     @@:
-    cmp al, 2
+    cmp ax, 14*256 + 2
+    jne @F
+        mov cx, 0B0Dh ; start line 11, end line 13
+        jmp @set_cursor
+    @@:
+    cmp ax, 16*256 + 1
+    jne @F
+        mov cx, 000Dh ; start line 0, end line 13
+        jmp @set_cursor
+    @@:
+    cmp ax, 16*256 + 2
     jne @F
         mov cx, 0B0Dh ; start line 11, end line 13
         jmp @set_cursor
@@ -2399,46 +2599,37 @@ set_cursor endp
 mode_0_SCRSTT_init proc near private
 
     push bx
-    push cx
 
-    ; Query the current mode and width
-    mov ah, 0Fh
-    int 10h
-    cmp ah, 40
-    mov al, 3     ; BIOS mode for 80 columns
-    jg @F
-        mov al, 1 ; BIOS mode for 40 columns
-    @@:
-    mov cl, al    ; Save this to check for success
-    mov ah, 00h
-    int 10h       ; Set the BIOS mode
-
-    ; Did the mode switch succeed?
-    mov ah, 0Fh
-    int 10h
-    cmp al, cl
-    jne @monochrome
-        ; We got the requested mode.
-        mov text_width, ah
-        mov ax, 0B800h
-        mov video_seg, ax 
+    test disp_installed, disp_cga
+    je @monochrome
+        ; Query the current mode and width
+        mov ah, 0Fh
+        int 10h
+        mov al, 3     ; BIOS mode for 80 columns
+        mov bl, 80
+        cmp ah, 40
+        jg @F
+            mov al, 1 ; BIOS mode for 40 columns
+            mov bl, 40
+        @@:
+        mov text_width, bl
+        mov ah, 00h
+        int 10h       ; Set the BIOS mode
+        mov video_seg, 0B800h
     jmp @end
     @monochrome:
-        ; A monochrome adapter (MDA or Hercules) will reject the switch to
-        ; BIOS mode 1 or 3.
-        mov ax, 0B000h
-        mov video_seg, ax
-        ; Set BIOS mode 7, to ensure the registers are set up correctly
+        ; Not necessary with MDA. With Hercules, this returns to text mode.
         mov ax, 0007h
         int 10h
         mov text_width, 80
+        mov video_seg, 0B000h
     @end:
+
     mov text_height, 25
     mov foreground_color, 7
     mov background_color, 0
     call mode_0_set_text_attr
 
-    pop cx
     pop bx
     clc
     ret
@@ -7378,6 +7569,14 @@ DSEG segment public 'DATASG'
 extrn TOPMEM:word
 extrn CSAVEA:word
 extrn CSAVEM:byte
+
+; Installed video equipment
+disp_installed db 0
+disp_vga = 08h      ; VGA features available
+disp_ega = 04h      ; EGA features available
+disp_cga = 02h      ; CGA features available
+disp_mda = 01h      ; MDA or Hercules installed
+herc_size db 0      ; Memory in Kbytes for Hercules
 
 ; Blink state saved at init, to restore on exit
 blink_flag db ?
