@@ -12,6 +12,7 @@ extrn KYBCLR:near
 extrn SFTOFF:near
 extrn BASVAR:near
 extrn FKYSNS:near
+extrn CHKKYB:near
 
 ; For COMx port comnfiguration
 COM_rx_size = 256 ; Default size of receive buffer
@@ -64,6 +65,19 @@ GWINI proc near
     mov ds, dx
     mov dx, offset int1B_handler
     mov ax, 251Bh
+    int 21h
+    pop ds
+
+    ; Set INT 1Ch
+    mov ax, 351Ch
+    int 21h
+    mov word ptr old_int1C+0, bx
+    mov word ptr old_int1C+2, es
+    push ds
+    mov dx, cs
+    mov ds, dx
+    mov dx, offset int1C_handler
+    mov ax, 251Ch
     int 21h
     pop ds
 
@@ -321,6 +335,14 @@ GWTERM proc near
     int 21h
     pop ds
 
+    ; Remove INT 1Ch handler
+    push ds
+    lds dx, old_int1C
+    mov ax, 251Ch
+    int 21h
+    pop ds
+    call speaker_off
+
     ; Set blink mode back to starting state
     test disp_installed, disp_ega
     je @F
@@ -357,8 +379,20 @@ int1B_handler proc near private
     pop ds
     jmp cs:old_int1B
 
-int1b_handler endp
+int1B_handler endp
 old_int1B dd ?
+
+; INT 1Ch handler
+int1C_handler proc near private
+
+    push ds
+    mov ds, cs:BASIC_DS
+    call sound_timer
+    pop ds
+    jmp cs:old_int1C
+
+int1C_handler endp
+old_int1C dd ?
 
 ;-----------------------------------------------------------------------------
 ; Keyboard support
@@ -7292,15 +7326,306 @@ vga_SCANL endp
 ;                0xFF to turn off speaker
 ;           if AL != 0xFF:
 ;               CX = frequency in hertz
-;               DX = duration in 1/18.2 second clock ticks
+;               DX = duration in 400ths of a second
 ; Returns: C set on error
 PUBLIC DONOTE
 DONOTE proc near
 
-    ; TODO: The speaker is not yet implemented, but SNDRST calls this
+    cmp al, 0FFh
+    jne @F
+        call clear_sound_queue
+        clc
+        ret
+    @@:
+
+    ; Ensure that the sound queue exists
+    call create_sound_queue
+    jnc @F
+        ret
+    @@:
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    ; Move parameters so we have DX:AX for the divide
+    mov di, dx  ; duration
+    mov bl, al  ; wait flag
+
+    ; Divide
+    or cx, cx
+    je @end_divide  ; Frequency of 0 is a rest
+        mov ax, 2386364 shr 16
+        xor dx, dx
+        div cx
+        mov si, ax
+        mov ax, 2386364 and 0FFFFh
+        div cx
+        ; SI:AX = 2386364/CX
+        ; Halve and round to nearest
+        add ax, 1
+        adc si, 0
+        shr si, 1
+        rcr ax, 1
+        ; SI:AX = 1193182/CX
+        ; Bound the quotient to 1..65535
+        test si, si
+        je @low_bound
+            mov ax, 0FFFFh
+        jmp @end_bound
+        @low_bound:
+            test ax, ax
+            jne @end_bound
+                inc ax
+        @end_bound:
+    @end_divide:
+
+    ; Wait until there is space in the sound queue
+    call wait_sound_queue_space
+
+    ; Address the sound queue
+    mov es, sound_queue
+    mov dl, sound_queue_tail
+    xor dh, dh
+    mov si, dx
+    shl si, 1
+    shl si, 1
+
+    ; Insert the new sound
+    mov es:[si+0], ax   ; frequency
+    mov es:[si+2], di   ; duration
+    inc sound_queue_tail
+
+    ; Wait if requested
+    test bl, bl
+    jne @F
+        call wait_sound_queue_empty
+    @@:
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    clc
     ret
 
 DONOTE endp
+
+; Create the sound queue if it does not already exist
+; Return C clear on success, set on error (memory not available)
+create_sound_queue proc near private
+
+    cmp sound_queue, 0
+    je @F
+        clc
+        ret
+    @@:
+
+    push ax
+    push bx
+    push es
+
+    ; Allocate memory for the sound queue
+    mov bx, 1024/16 ; for 256 sounds
+    mov ah, 48h
+    int 21h
+    jc @error
+
+    mov sound_queue, ax
+    call clear_sound_queue
+
+    pop es
+    pop bx
+    pop ax
+    clc
+    ret
+
+@error:
+    pop es
+    pop bx
+    pop ax
+    stc
+    ret
+
+create_sound_queue endp
+
+; Clear the sound queue and turn the speaker off
+clear_sound_queue proc near private
+
+    pushf
+    cli
+    mov sound_queue_head, 0
+    mov sound_queue_tail, 0
+    mov sound_time, 0
+    call speaker_off
+    popf
+    ret
+
+clear_sound_queue endp
+
+; Wait until the sound queue is empty
+wait_sound_queue_empty proc near private
+
+    @wait:
+        cmp sound_time, 0
+        je @end_wait
+        hlt
+        call CHKKYB ; Poll for Ctrl-Break
+    jmp @wait
+    @end_wait:
+    call speaker_off
+    ret
+
+wait_sound_queue_empty endp
+
+; Wait until the sound queue is not full
+wait_sound_queue_space proc near private
+
+    push ax
+    @wait:
+        mov al, sound_queue_tail
+        sub al, sound_queue_head
+        cmp al, 255
+        jb @end_wait
+        hlt
+        call CHKKYB ; Poll for Ctrl-Break
+    jmp @wait
+    @end_wait:
+    pop ax
+    ret
+
+wait_sound_queue_space endp
+
+; Sound timer tick
+; This is called from an interrupt handler; it MUST preserve all registers!
+sound_timer proc near private
+
+    push ax
+
+    ; If sound_time was not 0, and it becomes 0, and the queue is empty,
+    ; turn the speaker off
+    cmp sound_time, 0
+    je @no_sound
+        ; Sound is in progress
+        ; Duration is in 400ths of a second; subtract 22 each time to match
+        ; the timer frequency
+        sub sound_time, 22
+        ja @end
+        mov sound_time, 0
+
+        ; End of note
+        mov al, sound_queue_head
+        cmp al, sound_queue_tail
+        je @stop_sound
+            ; Set up the next note
+            call play_note
+        jmp @end
+        @stop_sound:
+            ; Queue is empty
+            call speaker_off
+    jmp @end
+    @no_sound:
+        ; No sound is in progress
+        mov al, sound_queue_head
+        cmp al, sound_queue_tail
+        je @end
+            call play_note
+    @end:
+
+    pop ax
+    ret
+
+sound_timer endp
+
+; Play the next note in the queue
+; On entry, the queue is not empty. If the last sound leaves a duration
+; of 0, it will play until cancelled.
+play_note proc near private
+
+    push ax
+    push si
+    push es
+
+    @next:
+    mov al, sound_queue_head
+    cmp al, sound_queue_tail
+    je @end
+
+        ; Get a note from the queue
+        xor ah, ah
+        mov si, ax
+        shl si, 1
+        shl si, 1
+        mov es, sound_queue
+        mov ax, es:[si]
+        or ax, ax
+        je @rest
+            ; Note
+            call speaker_on
+        jmp @end_note
+        @rest:
+            ; Rest
+            call speaker_off
+        @end_note:
+        mov ax, es:[si+2]
+        mov sound_time, ax
+        inc sound_queue_head
+        or ax, ax
+        je @next    ; Duration is 0; queue the next note if there is one
+
+    @end:
+
+    pop es
+    pop si
+    pop ax
+    ret
+
+play_note endp
+
+; Turn the speaker on, with the frequency divisor in AX
+speaker_on proc near private
+
+    pushf
+    cli
+    push ax
+    mov al, 10110110b ; Counter 2; write both low and high bytes; square wave
+    out 43h, al       ; generator; binary count
+    pop ax
+    out 42h, al
+    xchg al, ah
+    out 42h, al
+    xchg al, ah
+    push ax
+    in al, 61h
+    or al, 03h        ; Enable the gate line
+    out 61h, al
+    pop ax
+    popf
+    ret
+
+speaker_on endp
+
+; Turn the speaker off
+speaker_off proc near private
+
+    push ax
+    pushf
+    cli
+    in al, 61h
+    and al, 0FCh        ; Disable the gate line
+    out 61h, al
+    popf
+    pop ax
+    ret
+
+speaker_off endp
 
 ;-----------------------------------------------------------------------------
 ; Support for COMx ports
@@ -7710,6 +8035,12 @@ ega_blit_bits dw ?
 ; Event flag
 event_flag dw 0
 event_ctrlbreak = 0001h
+
+; Sound support
+sound_queue dw 0 ; Segment for queue data
+sound_queue_head db 0 ; Head of queue
+sound_queue_tail db 0 ; Head of queue
+sound_time dw 0  ; Ticks until current sound ends
 
 DSEG ends
 
