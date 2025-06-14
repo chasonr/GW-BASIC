@@ -8019,9 +8019,10 @@ else
 
     ; Align to multiple of 16 bytes
     add dx, 15
-    jc SETCBF_error
-    mov cl, 4
-    shr dx, cl
+    rcr dx, 1
+    shr dx, 1
+    shr dx, 1
+    shr dx, 1
 
     ; Allocate this much per COMx device
     mov cx, NMCOMT ; How many ports
@@ -8183,7 +8184,7 @@ SNDLPT proc near
     ; Convert returned status to error in BASIC
     xor al, al
     test ah, 80h
-    jne @F
+    je @F
         mov al, 1   ; Device unavailable
         jmp @end
     @@:
