@@ -1038,8 +1038,8 @@ mode_table label word
     dw offset screen_mode_7  ; EGA 320x200, 16 colors
     dw offset screen_mode_8  ; EGA 640x200, 16 colors
     dw offset screen_mode_9  ; EGA 640x350, 16 colors
-    dw 0                     ; EGA 640x350, monochrome
-    dw 0                     ; VGA 640x480, monochrome
+    dw offset screen_mode_10 ; EGA 640x350, monochrome
+    dw offset screen_mode_11 ; VGA 640x480, monochrome
     dw offset screen_mode_12 ; VGA 640x480, 16 colors
     dw offset screen_mode_13 ; VGA 320x200, 256 colors
 mode_table_size = ($ - mode_table)/2
@@ -1357,6 +1357,110 @@ screen_mode_9 label word
     db 4                      ; pixel_size
     db 10h                    ; bios_mode
     db disp_ega               ; display
+
+screen_mode_10 label word
+    dw ega_SCRSTT_init        ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw ega_SCROUT             ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw ega_SCROLL             ; SCROLL_handler
+    dw ega_CLRSCN             ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw ega_CSRDSP             ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw ega_SETCLR             ; SETCLR_handler
+    dw ega_SWIDTH_40          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw ega_SETFBC             ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw ega_STOREC             ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw ega_UPC                ; UPC_handler
+    dw ega_DOWNC              ; DOWNC_handler
+    dw ega_LEFTC              ; LEFTC_handler
+    dw ega_RIGHTC             ; RIGHTC_handler
+    dw ega_MAPXYC             ; MAPXYC_handler
+    dw ega_SETATR             ; SETATR_handler
+    dw ega_READC              ; READC_handler
+    dw ega_SETC               ; SETC_handler
+    dw ega_NSETCX             ; NSETCX_handler
+    dw ega_PGINIT             ; PGINIT_handler
+    dw ega_mono_NREAD         ; NREAD_handler
+    dw ega_mono_NWRITE        ; NWRITE_handler
+    dw ega_PNTINI             ; PNTINI_handler
+    dw ega_TDOWNC             ; TDOWNC_handler
+    dw ega_TUPC               ; TUPC_handler
+    dw ega_SCANR              ; SCANR_handler
+    dw ega_SCANL              ; SCANL_handler
+    db 80                     ; text_columns
+    db 25                     ; text_rows
+    dw 640                    ; x_res
+    dw 350                    ; y_res
+    dw 00BBh                  ; width_height (0.729)
+    dw 015Fh                  ; height_width (1.200)
+    db 15                     ; page_size
+    db 2                      ; num_pages
+    db 1                      ; pixel_size
+    db 0Fh                    ; bios_mode
+    db disp_ega               ; display
+
+screen_mode_11 label word
+    dw ega_SCRSTT_init        ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw ega_SCROUT             ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw ega_SCROLL             ; SCROLL_handler
+    dw ega_CLRSCN             ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw ega_CSRDSP             ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw ega_SETCLR             ; SETCLR_handler
+    dw ega_SWIDTH_40          ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw ega_SETFBC             ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw ega_STOREC             ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw ega_UPC                ; UPC_handler
+    dw ega_DOWNC              ; DOWNC_handler
+    dw ega_LEFTC              ; LEFTC_handler
+    dw ega_RIGHTC             ; RIGHTC_handler
+    dw ega_MAPXYC             ; MAPXYC_handler
+    dw ega_SETATR             ; SETATR_handler
+    dw ega_READC              ; READC_handler
+    dw ega_SETC               ; SETC_handler
+    dw ega_NSETCX             ; NSETCX_handler
+    dw ega_PGINIT             ; PGINIT_handler
+    dw ega_mono_NREAD         ; NREAD_handler
+    dw ega_mono_NWRITE        ; NWRITE_handler
+    dw ega_PNTINI             ; PNTINI_handler
+    dw ega_TDOWNC             ; TDOWNC_handler
+    dw ega_TUPC               ; TUPC_handler
+    dw ega_SCANR              ; SCANR_handler
+    dw ega_SCANL              ; SCANL_handler
+    db 80                     ; text_columns
+    db 30                     ; text_rows
+    dw 640                    ; x_res
+    dw 480                    ; y_res
+    dw 0100h                  ; width_height (1.0)
+    dw 0100h                  ; height_width (1.0)
+    db 0                      ; page_size
+    db 1                      ; num_pages
+    db 1                      ; pixel_size
+    db 11h                    ; bios_mode
+    db disp_vga               ; display
 
 screen_mode_12 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
@@ -2200,12 +2304,19 @@ generic_SCRSTT_actpage proc near private
     push cx
 
     mov cl, cs:Screen_Mode.page_size[di]
-    shl ax, cl
-    mov page_offset, ax
-    mov ax, 1
-    shl ax, cl
-    dec ax
-    mov page_bitmask, ax
+    or cl, cl
+    je @no_pages
+        shl ax, cl
+        mov page_offset, ax
+        mov ax, 1
+        shl ax, cl
+        dec ax
+        mov page_bitmask, ax
+    jmp @end
+    @no_pages:
+        mov page_offset, 0
+        mov page_bitmask, 0FFFFh
+    @end:
 
     pop cx
     pop ax
@@ -4135,7 +4246,7 @@ cga_NWRITE proc near private
     add dx, blit_bits
     dec dx
     cmp dx, 8
-    jge @multibyte
+    jae @multibyte
 
         ; Transfer lies within a single byte
         ; Build bit mask in DH
@@ -5992,6 +6103,216 @@ ega_NWRITE proc near private
 
 ega_NWRITE endp
 
+; Read a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          main memory address advanced to next line
+;          pixels read in packed form into main memory
+;
+; Used instead of ega_NREAD in monochrome modes (10 and 11)
+ega_mono_NREAD proc near private
+
+    push ax
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    ; Only one plane to read, so read directly into the caller's array
+
+    ; Select plane to read
+    write_ega_reg 03CEh, 4, 0
+
+    mov dx, blit_bytes  ; Number of bytes
+    les si, video_addr  ; Copy from
+    mov di, blit_addr   ; Copy to
+
+    ; Shift so that no extra pixels appear to the left
+    mov cx, x_coordinate
+    and cx, 7       ; also CH <- 0; this is the carry byte
+    je @no_lshift   ; Skip if no shift needed
+        mov al, es:[si]
+        inc si
+        xor ah, ah
+        shl ax, cl
+        mov ch, ah      ; Initial carry
+        @lshift:
+            mov al, es:[si]
+            inc si
+            xor ah, ah
+            shl ax, cl
+            or al, ch   ; Carry in
+            mov ch, ah  ; Carry out
+            mov [di], al
+            inc di
+        dec dx
+        jnz @lshift
+    jmp @end_lshift
+    @no_lshift:
+        ; Shift is zero; just copy
+        @copy:
+            mov al, es:[si]
+            inc si
+            mov [di], al
+            inc di
+        dec dx
+        jnz @copy
+    @end_lshift:
+
+    ; Advance the local memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop ax
+    ret
+
+ega_mono_NREAD endp
+
+; Write a line of pixels
+; On entry: PGINIT complete
+; Returns: none in registers
+;          local memory address advanced to the next line
+;
+; Used instead of ega_NWRITE in monochrome modes (10 and 11)
+ega_mono_NWRITE proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push bp
+    push si
+    push di
+    push es
+
+    cld
+
+    mov bx, x_coordinate
+    and bx, 07h ; this is the shift count
+    mov ah, byte ptr blit_mixer+0
+    or ah, bl
+    write_ega_reg 03CEh, 1, 0  ; No set/reset
+    write_ega_reg 03CEh, 3, ah ; Selected operation, rotate by the shift count
+
+    ; Does the transfer cross a byte boundary?
+    mov bp, bx
+    add bp, blit_bits
+    dec bp
+    cmp bp, 8
+    jae @multibyte
+
+        ; Transfer lies within a single byte
+        ; Build bit mask in AH
+        mov ah, left_mask_1[bx]
+        and ah, right_mask_1[bp]
+        write_ega_reg 03CEh, 8, ah ; Bits to transfer
+
+        ; Byte to transfer in AL
+        mov si, blit_addr
+        lodsb
+
+        ; Invert if the configured operation calls for it
+        xor al, byte ptr blit_mixer+1
+
+        ; Transfer to frame buffer
+        les di, video_addr
+        mov dl, es:[di]
+        stosb
+
+    jmp @end
+    @multibyte:
+
+        ; Left and right masks
+        mov bh, left_mask_1[bx]
+        push bp
+        and bp, 07h
+        mov bl, right_mask_1[bp]
+        pop bp
+
+        ; Number of whole bytes to copy
+        shr bp, 1
+        shr bp, 1
+        shr bp, 1
+
+        ; Invert if the configured operation calls for it
+        mov ah, byte ptr blit_mixer+1
+
+        ; Transfer left portion of bytes
+        mov si, blit_addr
+        les di, video_addr
+        mov cx, bp        
+        write_ega_reg 03CEh, 8, bh
+        @left_copy:
+            lodsb
+            xor al, ah
+            mov dl, es:[di]
+            stosb
+        loop @left_copy
+        ; Transfer odd bits
+        mov cl, bh
+        and cl, bl
+        jz @F
+            write_ega_reg 03CEh, 8, cl
+            lodsb
+            xor al, ah
+            mov dl, es:[di]
+            stosb
+        @@:
+
+        ; Transfer right portion of bytes
+        not bh
+        mov si, blit_addr
+        les di, video_addr
+        inc di
+        mov cx, bp        
+        dec cx
+        jz @end_right_copy
+        write_ega_reg 03CEh, 8, bh
+        @right_copy:
+            lodsb
+            xor al, ah
+            mov dl, es:[di]
+            stosb
+        loop @right_copy
+        @end_right_copy:
+        ; Transfer odd bits
+        mov cl, bh
+        and cl, bl
+        jz @F
+            write_ega_reg 03CEh, 8, cl
+            lodsb
+            xor al, ah
+            mov dl, es:[di]
+            stosb
+        @@:
+
+    @end:
+
+    ; Advance the local memory address
+    mov ax, blit_bytes
+    add blit_addr, ax
+
+    mov ega_set_pixel, 1
+    write_ega_reg 03CEh, 3, 0 ; Replace operation, no rotation
+
+    pop es
+    pop di
+    pop si
+    pop bp
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+ega_mono_NWRITE endp
+
 ; Set up flood fill algorithm
 ; On entry: AL = border attribute
 ; Returns: C set if error
@@ -6084,7 +6405,11 @@ ega_SCANR proc near private
     push dx
     write_ega_reg 03CEh, 5, 08h         ; Read mode 1
     write_ega_reg 03CEh, 2, border_attr ; Color compare register
-    write_ega_reg 03CEh, 7, 0Fh         ; All bits of color are significant
+    mov cl, cs:Screen_Mode.pixel_size[di]
+    mov ah, 1
+    shl ah, cl
+    dec ah
+    write_ega_reg 03CEh, 7, ah          ; Significant bits of the color
     pop dx
 
     ; Right boundary
@@ -6300,7 +6625,11 @@ ega_SCANL proc near private
     ; Set up read mode 1 and border color as target
     write_ega_reg 03CEh, 5, 08h         ; Read mode 1
     write_ega_reg 03CEh, 2, border_attr ; Color compare register
-    write_ega_reg 03CEh, 7, 0Fh         ; All bits of color are significant
+    mov cl, cs:Screen_Mode.pixel_size[di]
+    mov ah, 1
+    shl ah, cl
+    dec ah
+    write_ega_reg 03CEh, 7, ah          ; Significant bits of the color
 
     ; Graphics position
     les di, video_addr
