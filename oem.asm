@@ -81,6 +81,31 @@ GWINI proc near
     int 21h
     pop ds
 
+    ; Set COMx interrupt handlers
+    mov ax, 350Bh
+    int 21h
+    mov word ptr old_int0B+0, bx
+    mov word ptr old_int0B+2, es
+    push ds
+    mov dx, cs
+    mov ds, dx
+    mov dx, offset comx_irq3_handler
+    mov ax, 250Bh
+    int 21h
+    pop ds
+
+    mov ax, 350Ch
+    int 21h
+    mov word ptr old_int0C+0, bx
+    mov word ptr old_int0C+2, es
+    push ds
+    mov dx, cs
+    mov ds, dx
+    mov dx, offset comx_irq4_handler
+    mov ax, 250Ch
+    int 21h
+    pop ds
+
     pop es
     pop cx
     pop bx
@@ -324,6 +349,19 @@ GWTERM proc near
     int 21h
     pop ds
     call speaker_off
+
+    ; Remove COMx interrupt handlers
+    push ds
+    lds dx, old_int0B
+    mov ax, 250Bh
+    int 21h
+    pop ds
+
+    push ds
+    lds dx, old_int0C
+    mov ax, 250Ch
+    int 21h
+    pop ds
 
     ; Set blink mode back to starting state
     test disp_installed, disp_ega
@@ -7997,71 +8035,56 @@ speaker_off endp
 PUBLIC SETCBF
 SETCBF proc near
 
-if NMCOMT eq 0
-    ; No COMx ports configured
-    mov dx, 0
-    clc
-    ret
-else
-    ; TODO COMx ports not yet supported
     push ax
     push bx
     push cx
     push si
-    push di
 
-    mov si, cx ; Segment in SI
+    ; We allocate nothing here. Transmit and receive queues are allocated
+    ; when a device is opened for the first time.
 
     ; Set default receive buffer size
     jnz @F
         mov dx, COM_rx_size
     @@:
 
-    ; Align to multiple of 16 bytes
-    add dx, 15
-    rcr dx, 1
-    shr dx, 1
-    shr dx, 1
-    shr dx, 1
+    mov comx_rx_qsize, dx
 
-    ; Allocate this much per COMx device
-    mov cx, NMCOMT ; How many ports
-    xor si, si     ; Offset to next receive or transmit buffer
-    xor bx, bx     ; Offset to next control structure
-    SETCBF_allocate:
-        ; TODO: place the receive buffer segment
-        add si, dx
-        jc SETCBF_error
-        ; TODO: place the transmit buffer segment
-        add si, (COM_tx_size+15)/16
-        jc SETCBF_error
-    loop SETCBF_allocate
-    ; Check total allocation for overflow
-    ; Set C if *more* than 64K allocated
-    cmp si, 65536/16
-    cmc
-    jc SETCBF_error
+    ; Set up fixed part of device blocks
+    mov si, offset comx_params_list
+    mov bx, offset comx_devices
+    mov cx, NMCOMT
+    @@:
+        mov ax, cs:COMx_Params.io_addr[si]
+        mov COMx_Device.io_addr[bx], ax
+        mov al, cs:COMx_Params.irq[si]
+        mov COMx_Device.irq[bx], al
+    add si, COMx_Params
+    add bx, COMx_Device
+    loop @B
 
-    ; Return size in DX
-    mov dx, si
-    mov cl, 4
-    shl dx, cl
-
-    clc
-SETCBF_error:
-    pop di
+    ; No allocation here
+    xor dx, dx
     pop si
     pop cx
     pop bx
     pop ax
+    clc
     ret
-endif
+
+COMx_Params struc
+    io_addr dw ?
+    irq     db ?
+COMx_Params ends
+comx_params_list COMx_Params <03F8h, 4>
+                 COMx_Params <02F8h, 3>
+                 COMx_Params <03E8h, 4>
+                 COMx_Params <02E8h, 3>
 
 SETCBF endp
 
 ; Set up COMx port
-; On entry: AH = unit number; 0 for COM1, 1 for COM2
-;           DS:BX = address of DCB
+; On entry: DS:BX = address of DCB
 ;       _DEVID=0D               ;RS232 Channel ID (0..n)
 ;       _BAUDR=1D               ;baud rate (least significant byte 1st)
 ;                               ;(0=disable device, 9600=9600 baud etc.)
@@ -8085,17 +8108,228 @@ SETCBF endp
 ; On return: AH = 0
 ; On error:  AH = 0xFF: BASIC signals "Illegal file name"
 ;                       Otherwise same as STACOM
+
+; This describes the device control block provided by the caller
+COMx_DCB struc
+
+    _DEVID db ?             ;RS232 Channel ID (0..n)
+    _BAUDR dw ?             ;baud rate (least significant byte 1st)
+                            ;(0=disable device, 9600=9600 baud etc.)
+    _BYTSZ db ?             ;bits per byte (4..8)
+    _PARIT db ?             ;parity (0..4)=...(NONE, ODD, EVEN, MARK, SPACE)
+        P_NONE  = 0
+        P_ODD   = 1
+        P_EVEN  = 2
+        P_MARK  = 3
+        P_SPACE = 4
+    _STOPB db ?             ;(0..2)= (1, 1.5, 2) stop bits
+        ST_1   = 0
+        ST_1_5 = 1
+        ST_2   = 2
+    _RLSTO dw ?             ;RLSD (rec. line signal detect) timeout
+    _CTSTO dw ?             ;CTS (clear to send) timeout
+    _DSRTO dw ?             ;DSR (data set ready) timeout
+                            ;All timeout values are in milliseconds.
+                            ;0=infinite, LSB is always 1st.
+                            ;Support of Timeout Flags by BIOS is
+                            ;optional.
+    _CMFLG db ?             ;Boolean attributes mask for this device
+        _CMBIN=1O               ;(0/1)=ASCII/BINARY (ASC option not in filename)
+        _CMRTS=2O               ;non-zero=Suppress Request-To-Send (RS option)
+        _CMCOD=20O              ;non-zero=user specified ASC or BIN in filename
+        _CMCTS=40O              ;non-zero=CTS parm not defaulted
+        _CMCLF=100O             ;non-zero=Send line feed after CR
+        _CMCRF=200O             ;non-zero=last char sent was Carriage Return
+
+COMx_DCB ends
+
 PUBLIC INICOM
 INICOM proc near
 
-    ; Stub: COMx ports not implemented
-    mov ah, 0FFh
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+
+    ; Local device structure in DI
+    mov ah, COMx_DCB._DEVID[bx]
+    call comx_get_device
+    jc @no_device
+    cmp COMx_Device.open[di], 0
+    jnz @no_device
+
+    ; Allocate queues if not already allocated
+    cmp COMx_Device.tx_queue[di], 0
+    jnz @F
+        push bx
+        mov bx, (COM_tx_size+15)/16
+        mov ah, 48h
+        int 21h
+        pop bx
+        jc @no_device
+        mov COMx_Device.tx_queue[di], ax
+    @@:
+    cmp COMx_Device.rx_queue[di], 0
+    jnz @F
+        push bx
+        mov bx, comx_rx_qsize
+        add bx, 15
+        mov cl, 4
+        shr bx, cl
+        mov ah, 48h
+        int 21h
+        pop bx
+        jc @no_device
+        mov COMx_Device.rx_queue[di], ax
+    @@:
+
+    ; Empty the queues
+    xor ax, ax
+    mov COMx_Device.tx_head[di], ax
+    mov COMx_Device.tx_tail[di], ax
+    mov COMx_Device.rx_head[di], ax
+    mov COMx_Device.rx_tail[di], ax
+
+    ; Set the device flags
+    mov al, COMx_DCB._CMFLG[bx]
+    mov COMx_Device.flags[di], al
+
+    ; Set the bit rate:
+    ; Access the divisor
+    mov dx, COMx_Device.io_addr[di]
+    add dx, 3
+    mov al, 80h
+    out dx, al
+    ; Get the bit rate
+    mov cx, COMx_DCB._BAUDR[bx]
+    cmp cx, 4
+    jb @no_device   ; Avoid overflow when dividing
+    ; As a special case, if the bit rate is 65535, set the divisor to 1.
+    ; This will configure 115200 bps, the fastest that a COMx port can go.
+    cmp cx, 65535
+    jne @divide
+        mov ax, 1
+    jmp @set_divisor
+    @divide:
+        ; AX <- 115200/_BAUDR rounded to nearest
+        mov dx, (115200*2) shr 16
+        mov ax, (115200*2) and 0FFFFh
+        div cx
+        inc ax
+        shr ax, 1
+    @set_divisor:
+    ; Set the divisor
+    mov dx, COMx_Device.io_addr[di]
+    out dx, al
+    inc dx
+    xchg al, ah
+    out dx, al
+    xchg al, ah
+    ; Check that the divisor was written successfully
+    mov cx, ax
+    in al, dx
+    mov ah, al
+    dec dx
+    in al, dx
+    cmp ax, cx
+    jne @no_device
+
+    ; Line control register:
+    ; bits 0-1: word size
+    mov ah, COMx_DCB._BYTSZ[bx]
+    cmp ah, 8
+    ja @no_device
+    sub ah, 5
+    jc @no_device
+    ; bit 2: number of stop bits
+    mov al, COMx_DCB._STOPB[bx]
+    ; If we set a 5 bit word, the 8250 generates 1.5 stop bits when bit 2 is
+    ; set; if we set a longer word, the 8250 generates two stop bits.
+    ; If the caller requests 1.5 stop bits and a 6 bit word or more, set two
+    ; stop bits; if two stop bits and a 5 bit word, we can't guarantee two
+    ; stop bits, so bail out
+    cmp al, ST_2
+    ja @no_device   ; error if setting is invalid
+    jb @stop_ok     ; OK if 1 or 1.5 stop bits
+    cmp ah, 0
+    je @no_device   ; error if 5 bit word and 2 stop bits
+    @stop_ok:
+    cmp al, ST_1
+    je @F
+        or ah, 04h
+    @@:
+    ; bits 3-5: parity setting
+    mov dl, COMx_DCB._PARIT[bx]
+    cmp dl, P_SPACE
+    ja @no_device   ; error if setting is invalid
+    xor dh, dh
+    mov si, dx
+    or ah, parity_table[si]
+    ; set the register
+    ; This also switches io_addr+0 and 1 back to the normal registers
+    mov dx, COMx_Device.io_addr[di]
+    add dx, 3
+    mov al, ah
+    out dx, al
+
+    ; Set modem control register
+    inc dx              ; DX <- io_addr+4
+    mov al, 00001011b   ; Set Out 2, RTS and DTR; clear Loop and Out 1
+    test COMx_DCB._CMFLG[bx], _CMRTS
+    jz @F
+        and al, not 00000010b ; Clear RTS
+    @@:
+    out dx, al
+
+    ; Read the status registers
+    inc dx              ; DX <- io_addr+5, line status register
+    in al, dx
+    inc dx              ; DX <- io_addr+6, modem status register
+    in al, dx
+
+    ; Mark as open and Tx inactive, and clear errors
+    mov COMx_Device.open[di], 1
+    mov COMx_Device.tx_active[di], 0
+    mov COMx_Device.errors[di], 0
+
+    ; Set the interrupt enable register
+    mov dx, COMx_Device.io_addr[di]
+    add dx, 1
+    mov al, 00000111b   ; Enable Tx, Rx, line status
+    out dx, al
+
+    ; Enable the interrupt at the interrupt controller
+    mov cl, COMx_Device.irq[di]
+    mov ah, 0FEh
+    rol ah, cl
+    in al, 21h
+    and al, ah
+    out 21h, al
+
+    mov ah, 0
+@end:
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
     ret
+
+@no_device:
+    mov ah, 0FFh
+    jmp @end
+
+parity_table db 00000000b ; P_NONE  = 0: enable parity = 0
+             db 00001000b ; P_ODD   = 1: enable parity = 1, even parity = 0, stick parity = 0
+             db 00011000b ; P_EVEN  = 2: enable parity = 1, even parity = 1, stick parity = 0
+             db 00101000b ; P_MARK  = 3: enable parity = 1, even parity = 0, stick parity = 1
+             db 00111000b ; P_SPACE = 4: enable parity = 1, even parity = 1, stick parity = 1
 
 INICOM endp
 
 ; Receive a byte from a COMx port
-; On entry:   AH = unit number; 0 for COM1, 1 for COM2
+; On entry:   AH = unit number; 0 for COM1, 1 for COM2, etc.
 ; On return:  AH = 0
 ;             Z clear if byte received
 ;             AL = byte received
@@ -8103,14 +8337,73 @@ INICOM endp
 PUBLIC RECCOM
 RECCOM proc near
 
-    ; Stub: COMx ports not implemented
-    mov ah, 03h ; Timeout
+    push bx
+    push di
+    push es
+
+    ; Local device structure in DI
+    call comx_get_device
+    jc @no_device
+    cmp COMx_Device.open[di], 0
+    jz @no_device
+
+    ; Check for received errors
+    xor al, al
+    xchg COMx_Device.errors[di], al
+    test al, 02h ; overrun
+    jnz @overrun
+    test al, 04h ; parity
+    jnz @parity
+    test al, 08h ; framing
+    jnz @io_error
+
+    xor ah, ah  ; No error if we return by this path
+
+    ; Is there a byte available?
+    mov bx, COMx_Device.rx_head[di]
+    cmp bx, COMx_Device.rx_tail[di]
+    je @end     ; return with Z set for no character
+
+    ; A byte is available
+    mov es, COMx_Device.rx_queue[di]
+    mov al, es:[bx]
+    inc bx
+    cmp bx, comx_rx_qsize
+    jb @F
+        xor bx, bx
+    @@:
+    mov COMx_Device.rx_head[di], bx
+
+    ; Clear Z before returning by this path
+    mov bx, 1
+    or bx, bx
+    
+@end:
+    pop es
+    pop di
+    pop bx
     ret
+
+@no_device:
+    mov ah, 0FFh
+    jmp @end
+
+@overrun:
+    mov ah, 1
+    jmp @end
+
+@parity:
+    mov ah, 2
+    jmp @end
+
+@io_error:
+    mov ah, 0FFh
+    jmp @end
 
 RECCOM endp
 
 ; Query status of COMx port
-; On entry:   AH = unit number; 0 for COM1, 1 for COM2
+; On entry:   AH = unit number; 0 for COM1, 1 for COM2, etc.
 ; On return:  AH = 0
 ;             CX = free bytes in queue
 ;             DX = total bytes in queue
@@ -8122,38 +8415,410 @@ RECCOM endp
 PUBLIC STACOM
 STACOM proc near
 
-    ; Stub: COMx ports not implemented
-    mov ah, 03h ; Timeout
+    push di
+
+    ; Local device structure in DI
+    call comx_get_device
+    jc @no_device
+    cmp COMx_Device.open[di], 0
+    jz @no_device
+
+    ; Receive queue status
+    mov dx, comx_rx_qsize
+    mov ax, COMx_Device.rx_tail[di]
+    sub ax, COMx_Device.rx_head[di]
+    jnc @F
+        add ax, dx
+    @@:
+    ; AX is the number of bytes in the queue
+    dec dx ; Capacity is rx_qsize - 1
+    mov cx, dx
+    sub cx, ax
+
+    ; Check for received errors
+    xor al, al
+    xchg COMx_Device.errors[di], al
+    test al, 02h ; overrun
+    jnz @overrun
+    test al, 04h ; parity
+    jnz @parity
+    test al, 08h ; framing
+    jnz @io_error
+
+    xor ah, ah
+
+@end:
+    pop di
     ret
+
+@no_device:
+    mov ah, 0FFh
+    jmp @end
+
+@overrun:
+    mov ah, 1
+    jmp @end
+
+@parity:
+    mov ah, 2
+    jmp @end
+
+@io_error:
+    mov ah, 0FFh
+    jmp @end
 
 STACOM endp
 
 ; Send a byte to a COMx port
-; On entry:   AH = unit number; 0 for COM1, 1 for COM2
+; On entry:   AH = unit number; 0 for COM1, 1 for COM2, etc.
 ;             AL = byte to send
 ; On return:  AH = 0
 ; On error:   AH = nonzero error code, as for STACOM
 PUBLIC SNDCOM
 SNDCOM proc near
 
-    ; Stub: COMx ports not implemented
-    mov ah, 03h ; Timeout
+    push bx
+    push cx
+    push di
+    push es
+
+    ; Local device structure in DI
+    call comx_get_device
+    jc @no_device
+    cmp COMx_Device.open[di], 0
+    jz @no_device
+
+    ; BX <- current tail of transmit queue
+    mov bx, COMx_Device.tx_tail[di]
+    ; CX <- tail after update
+    mov cx, bx
+    inc cx
+    cmp cx, COM_tx_size
+    jb @F
+        xor cx, cx
+    @@:
+    ; Is there space in the queue?
+    @tx_wait:
+        cmp cx, COMx_Device.tx_head[di]
+        jne @end_tx_wait
+        call CHKKYB
+    jmp @tx_wait
+    @end_tx_wait:
+
+    ; Place the byte in the queue
+    cli
+    mov es, COMx_Device.tx_queue[di]
+    mov es:[bx], al
+    mov COMx_Device.tx_tail[di], cx
+
+    ; Mark the transmitter as active; and if it wasn't, pass the byte to
+    ; the hardware
+    xor ah, ah
+    xchg COMx_Device.tx_active[di], ah
+    or ah, ah
+    jne @F
+        call comx_fill_tx
+    @@:
+    sti
+
+    ; No error
+    xor ah, ah
+@end:
+    pop es
+    pop di
+    pop cx
+    pop bx
     ret
+
+@no_device:
+    mov ah, 0FFh
+    jmp @end
 
 SNDCOM endp
 
 ; End access to a COMx port
-; On entry:   AH = unit number; 0 for COM1, 1 for COM2
+; On entry:   AH = unit number; 0 for COM1, 1 for COM2, etc.
 ; On return:  AH = 0
 ; On error:   AH = nonzero error code, as for STACOM
 PUBLIC TRMCOM
 TRMCOM proc near
 
-    ; Stub: COMx ports not implemented
+    push bx
+    push cx
+    push dx
+    push di
+    push es
+
+    ; Local device structure in DI
+    call comx_get_device
+    jc @no_device
+    cmp COMx_Device.open[di], 0
+    jz @no_device
+
+    cli
+    ; Mark the device as closed
+    mov COMx_Device.open[di], 0
+
+    ; Disable interrupts at the device
+    mov dx, COMx_Device.io_addr[di]
+    inc dx
+    xor al, al
+    out dx, al
+    sti
+
+    ; Free the transmit and the receive queues
+    mov es, COMx_Device.tx_queue[di]
+    mov ah, 49h
+    int 21h
+    mov es, COMx_Device.rx_queue[di]
+    mov ah, 49h
+    int 21h
+    xor ax, ax
+    mov COMx_Device.tx_queue[di], ax
+    mov COMx_Device.rx_queue[di], ax
+
+    ; If this was the last open device on its interrupt line, disable the
+    ; interrupt at the controller
+    mov cx, NMCOMT
+    mov bx, offset comx_devices
+    mov dl, COMx_Device.irq[di]
+    @irq_check:
+        cmp COMx_Device.open[bx], 0
+        jz @next_irq_check
+        ; Device is open
+        cmp COMx_Device.irq[bx], dl
+        je @end_irq_check   ; Another device is open on the same IRQ line
+    @next_irq_check:
+    add bx, COMx_Device
+    loop @irq_check
+        ; Disable the interrupt if we exit by this path
+        mov cl, dl
+        mov ah, 01h
+        shl ah, cl
+        in al, 21h
+        or al, ah
+        out 21h, al
+    @end_irq_check:
+
+    ; Return no error
     xor ah, ah
+
+@end:
+    pop es
+    pop di
+    pop dx
+    pop cx
+    pop bx
     ret
 
+@no_device:
+    mov ah, 0FFh
+    jmp @end
+
 TRMCOM endp
+
+; Given the device number in AH, get the address of the element of comx_devices
+; in DI
+; Return C if device does not exist
+comx_get_device proc near private
+
+    cmp ah, NMCOMT
+    jae @no_device
+
+    push ax
+    mov al, COMx_Device
+    mul ah
+    add ax, offset comx_devices
+    mov di, ax
+    pop ax
+    clc
+    ret
+
+@no_device:
+    stc
+    ret
+
+comx_get_device endp
+
+; Interrupt handlers for COMx ports
+comx_irq3_handler proc near private
+
+    push ax
+    mov al, 3
+    call comx_irq_handler
+    pop ax
+    iret
+
+comx_irq3_handler endp
+old_int0B dd ?
+
+comx_irq4_handler proc near private
+
+    push ax
+    mov al, 4
+    call comx_irq_handler
+    pop ax
+    iret
+
+comx_irq4_handler endp
+old_int0C dd ?
+
+comx_irq_handler proc near private
+
+    ; The caller saves AX and passes the IRQ number; this procedure must save
+    ; all other registers
+
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push ds
+    push es
+
+    mov ds, BASIC_DS
+
+    mov bl, al
+    mov cx, NMCOMT
+    mov di, offset comx_devices
+    @dev_loop:
+
+        cmp COMx_Device.open[di], 0
+        jz @next_device     ; Device is not open
+        cmp COMx_Device.irq[di], bl
+        jne @next_device    ; Device uses another interrupt
+
+        @get_interrupt:
+
+            ; Check the device's interrupt flags
+            mov dx, COMx_Device.io_addr[di]
+            add dx, 2           ; interrupt identification register
+            in al, dx
+            shr al, 1
+            jc @next_device     ; no interrupt from this device
+
+            ; Got an interrupt
+            mov bh, al
+            and bh, 03h
+            dec bh
+            jns @check_1
+                ; Modem status interrupt
+                ; This shouldn't happen, because it isn't enabled
+                mov dx, COMx_Device.io_addr[di]
+                add dx, 6
+                in al, dx
+            jmp @get_interrupt
+            @check_1:
+            dec bh
+            jns @check_2
+                ; Tx ready
+                call comx_fill_tx
+            jmp @get_interrupt
+            @check_2:
+            dec bh
+            jns @check_3
+                ; Rx ready
+                mov dx, COMx_Device.io_addr[di]
+                in al, dx
+
+                mov es, COMx_Device.rx_queue[di]
+
+                ; SI <- current tail of queue
+                ; DX <- tail after update
+                mov si, COMx_Device.rx_tail[di]
+                mov dx, si
+                inc dx
+                cmp dx, comx_rx_qsize
+                jb @F
+                    xor dx, dx
+                @@:
+                ; If the updated tail would equal the head, the queue is full.
+                ; Discard the byte and set the overrun flag
+                cmp dx, COMx_Device.rx_head[di]
+                jne @F
+                    or COMx_Device.errors[di], 02h
+                    or event_flag, event_rxerror
+                    jmp @get_interrupt
+                @@:
+
+                ; Add the byte to the queue
+                mov es:[si], al
+                mov COMx_Device.rx_tail[di], dx
+            jmp @get_interrupt
+            @check_3:
+                ; Line status interrupt
+                mov dx, COMx_Device.io_addr[di]
+                add dx, 5       ; line status register
+                in al, dx
+                and al, 1Fh
+                or COMx_Device.errors[di], al
+                or event_flag, event_rxerror
+        jmp @get_interrupt
+
+    @next_device:
+    add di, COMx_Device
+    dec cx
+    jnz @dev_loop
+
+    ; Acknowledge the interrupt
+    mov al, 60h
+    or al, bl
+    out 20h, al
+
+    pop es
+    pop ds
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    ret
+
+comx_irq_handler endp
+
+; Fill the transmitter from its queue
+; On entry: DI points to the relevant block in comx_devices
+;           Interrupts are disabled, whether called from SNDCOM or the
+;           interrupt handler
+comx_fill_tx proc near private
+
+    push ax
+    push bx
+    push dx
+    push es
+
+    ; BX <- current head of transmit queue
+    mov bx, COMx_Device.tx_head[di]
+    cmp bx, COMx_Device.tx_tail[di]
+    jne @tx_available
+        ; Mark the Tx inactive, so SNDCOM will start it again next time
+        mov COMx_Device.tx_active[di], 0
+    jmp @end
+    @tx_available:
+        ; Get byte from transmit queue
+        mov es, COMx_Device.tx_queue[di]
+        mov al, es:[bx]
+        ; Remove it from the queue
+        inc bx
+        cmp bx, COM_tx_size
+        jb @F
+            xor bx, bx
+        @@:
+        mov COMx_Device.tx_head[di], bx
+        ; Pass it to the device
+        mov dx, COMx_Device.io_addr[di]
+        out dx, al
+        ; Mark the Tx active
+        mov COMx_Device.tx_active[di], 1
+    @end:
+
+    pop es
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+comx_fill_tx endp
 
 ;-----------------------------------------------------------------------------
 ; Support for LPTx ports
@@ -8394,12 +9059,38 @@ ega_blit_whole_bytes dw ?
 ; Event flag
 event_flag dw 0
 event_ctrlbreak = 0001h
+event_rxready   = 0002h
+event_rxerror   = 0004h
 
 ; Sound support
 sound_queue dw 0 ; Segment for queue data
 sound_queue_head db 0 ; Head of queue
 sound_queue_tail db 0 ; Head of queue
 sound_time dw 0  ; Ticks until current sound ends
+
+; COMx device support
+; This is the control structure for a single COMx port
+COMx_Device struc
+
+open      db ? ; True if device is open
+tx_active db ? ; True if we're awaiting a transmit interrupt
+tx_queue  dw ? ; Segment for transmit queue
+tx_head   dw ? ; Head of transmit queue
+tx_tail   dw ? ; Tail of transmit queue
+rx_queue  dw ? ; Segment for receive queue
+rx_head   dw ? ; Head of receive queue
+rx_tail   dw ? ; Tail of receive queue
+io_addr   dw ? ; I/O address
+irq       db ? ; Interrupt number
+flags     db ? ; Flags set on open
+errors    db ? ; Errors received
+
+COMx_Device ends
+
+comx_devices db (NMCOMT*COMx_Device) dup (?)
+
+; Configured size of receive queue
+comx_rx_qsize dw ?
 
 DSEG ends
 
