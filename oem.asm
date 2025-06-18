@@ -474,6 +474,20 @@ KEYINP proc near
                 stc
                 ret
             @@:
+            cmp al, 03h
+            jne @end_ctrl_c
+                ; Signal shift-ctrl-C as ctrl-break
+                mov ah, 02h
+                int 16h
+                test al, 03h
+                je @ctrl_c
+                    mov ax, 0FF03h
+                    or ax, ax
+                    stc
+                    ret
+                @ctrl_c:
+                mov ax, 0003h
+            @end_ctrl_c:
             ; If 0xFF00+ctrl represents an editor key, return 0x0000+ctrl
             push bx
             xor bh, bh
