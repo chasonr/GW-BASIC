@@ -162,24 +162,15 @@ disp_check proc near private
         jnc @end_mda
             or disp_installed, disp_mda
         @end_mda:
-        ; An MDA has a 4K frame buffer mirrored through the 32K space at
-        ; B000:0000. A Hercules card actually has 32K or 64K of memory.
-        ; It will only have 32K if a CGA is also installed.
-
-        mov ax, 0B000h
-        mov es, ax
-        mov bx, 04000h
-        call check_framebuf
-        jnc @end_hercules
-            mov herc_size, 32
-            test disp_installed, disp_cga
-            jnz @end_hercules
-                ; Hercules with at least 32K is installed and no CGA.
-                ; Look for a 64K frame buffer.
-                mov bx, 08000h
-                call check_framebuf
-                jnc @end_hercules
-                    mov herc_size, 64
+        ; Allow Hercules if a driver is installed
+        mov ah, 0EFh
+        mov dx, 0FFFFh
+        int 10h
+        cmp dl, 0FFh
+        je @end_hercules
+            or disp_installed, disp_herc
+            inc dh
+            mov herc_size, dh
         @end_hercules:
     @end:
 
@@ -1083,7 +1074,7 @@ mode_table label word
     dw offset screen_mode_0  ; 40x25 or 80x25 text
     dw offset screen_mode_1  ; CGA 320x200, 4 colors
     dw offset screen_mode_2  ; CGA 640x200, 2 colors
-    dw 0                     ; Hercules 720x348, 2 colors
+    dw offset screen_mode_3  ; Hercules 720x348, 2 colors
     dw 0                     ; Olivetti; properties unknown
     dw 0                     ; undefined
     dw 0                     ; undefined
@@ -1175,21 +1166,21 @@ screen_mode_1 label word
     dw generic_FETCHC         ; FETCHC_handler
     dw cga_UPC                ; UPC_handler
     dw cga_DOWNC              ; DOWNC_handler
-    dw cga_LEFTC              ; LEFTC_handler
-    dw cga_RIGHTC             ; RIGHTC_handler
+    dw mono_LEFTC             ; LEFTC_handler
+    dw mono_RIGHTC            ; RIGHTC_handler
     dw cga_MAPXYC             ; MAPXYC_handler
     dw mode_1_SETATR          ; SETATR_handler
-    dw cga_READC              ; READC_handler
-    dw cga_SETC               ; SETC_handler
-    dw cga_NSETCX             ; NSETCX_handler
-    dw cga_PGINIT             ; PGINIT_handler
-    dw cga_NREAD              ; NREAD_handler
-    dw cga_NWRITE             ; NWRITE_handler
+    dw mono_READC             ; READC_handler
+    dw mono_SETC              ; SETC_handler
+    dw mono_NSETCX            ; NSETCX_handler
+    dw mono_PGINIT            ; PGINIT_handler
+    dw mono_NREAD             ; NREAD_handler
+    dw mono_NWRITE            ; NWRITE_handler
     dw mode_1_PNTINI          ; PNTINI_handler
     dw cga_TDOWNC             ; TDOWNC_handler
     dw cga_TUPC               ; TUPC_handler
-    dw cga_SCANR              ; SCANR_handler
-    dw cga_SCANL              ; SCANL_handler
+    dw mono_SCANR             ; SCANR_handler
+    dw mono_SCANL             ; SCANL_handler
     db 40                     ; text_columns
     db 25                     ; text_rows
     dw 320                    ; x_res
@@ -1227,21 +1218,21 @@ screen_mode_2 label word
     dw generic_FETCHC         ; FETCHC_handler
     dw cga_UPC                ; UPC_handler
     dw cga_DOWNC              ; DOWNC_handler
-    dw cga_LEFTC              ; LEFTC_handler
-    dw cga_RIGHTC             ; RIGHTC_handler
+    dw mono_LEFTC             ; LEFTC_handler
+    dw mono_RIGHTC            ; RIGHTC_handler
     dw cga_MAPXYC             ; MAPXYC_handler
-    dw mode_2_SETATR          ; SETATR_handler
-    dw cga_READC              ; READC_handler
-    dw cga_SETC               ; SETC_handler
-    dw cga_NSETCX             ; NSETCX_handler
-    dw cga_PGINIT             ; PGINIT_handler
-    dw cga_NREAD              ; NREAD_handler
-    dw cga_NWRITE             ; NWRITE_handler
-    dw mode_2_PNTINI          ; PNTINI_handler
+    dw mono_SETATR            ; SETATR_handler
+    dw mono_READC             ; READC_handler
+    dw mono_SETC              ; SETC_handler
+    dw mono_NSETCX            ; NSETCX_handler
+    dw mono_PGINIT            ; PGINIT_handler
+    dw mono_NREAD             ; NREAD_handler
+    dw mono_NWRITE            ; NWRITE_handler
+    dw mono_PNTINI            ; PNTINI_handler
     dw cga_TDOWNC             ; TDOWNC_handler
     dw cga_TUPC               ; TUPC_handler
-    dw cga_SCANR              ; SCANR_handler
-    dw cga_SCANL              ; SCANL_handler
+    dw mono_SCANR             ; SCANR_handler
+    dw mono_SCANL             ; SCANL_handler
     db 80                     ; text_columns
     db 25                     ; text_rows
     dw 640                    ; x_res
@@ -1253,6 +1244,58 @@ screen_mode_2 label word
     db 1                      ; pixel_size
     db 6                      ; bios_mode
     db disp_cga               ; display
+
+screen_mode_3 label word
+    dw herc_SCRSTT_init       ; SCRSTT_init
+    dw graphics_stub          ; SCRSTT_color
+    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw generic_SCRSTT_vispage ; SCRSTT_vispage
+    dw generic_SCROUT         ; SCROUT_handler
+    dw generic_SCRINP         ; SCRINP_handler
+    dw herc_SCROLL            ; SCROLL_handler
+    dw herc_CLRSCN            ; CLRSCN_handler
+    dw generic_CLREOL         ; CLREOL_handler
+    dw generic_CSRATR         ; CSRATR_handler
+    dw herc_CSRDSP            ; CSRDSP_handler
+    dw generic_LCPY           ; LCPY_handler
+    dw graphics_stub          ; SCRATR_handler
+    dw graphics_stub          ; SETCLR_handler
+    dw herc_SWIDTH            ; SWIDTH_handler
+    dw generic_GETFBC         ; GETFBC_handler
+    dw graphics_stub          ; SETFBC_handler
+    dw generic_FKYFMT         ; FKYFMT_handler
+    dw generic_FKYADV         ; FKYADV_handler
+    dw generic_GRPSIZ         ; GRPSIZ_handler
+    dw herc_STOREC            ; STOREC_handler
+    dw generic_FETCHC         ; FETCHC_handler
+    dw herc_UPC               ; UPC_handler
+    dw herc_DOWNC             ; DOWNC_handler
+    dw mono_LEFTC             ; LEFTC_handler
+    dw mono_RIGHTC            ; RIGHTC_handler
+    dw herc_MAPXYC            ; MAPXYC_handler
+    dw mono_SETATR            ; SETATR_handler
+    dw mono_READC             ; READC_handler
+    dw mono_SETC              ; SETC_handler
+    dw mono_NSETCX            ; NSETCX_handler
+    dw mono_PGINIT            ; PGINIT_handler
+    dw mono_NREAD             ; NREAD_handler
+    dw mono_NWRITE            ; NWRITE_handler
+    dw mono_PNTINI            ; PNTINI_handler
+    dw herc_TDOWNC            ; TDOWNC_handler
+    dw herc_TUPC              ; TUPC_handler
+    dw mono_SCANR             ; SCANR_handler
+    dw mono_SCANL             ; SCANL_handler
+    db 80                     ; text_columns
+    db 25                     ; text_rows
+    dw 720                    ; x_res
+    dw 348                    ; y_res
+    dw 00A5h                  ; width_height (0.644)
+    dw 018Dh                  ; height_width (1.552)
+    db 15                     ; page_size
+    db 2                      ; num_pages
+    db 1                      ; pixel_size
+    db 8                      ; bios_mode
+    db disp_herc              ; display
 
 screen_mode_7 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
@@ -3806,8 +3849,8 @@ cga_DOWNC endp
 ; Move one pixel left
 ; On entry: none
 ; Returns   none
-; Modes 1 and 2 both use this
-cga_LEFTC proc near private
+; Modes 1, 2 and 3 all use this
+mono_LEFTC proc near private
 
     push ax
     push cx
@@ -3829,13 +3872,13 @@ cga_LEFTC proc near private
     pop ax
     ret
 
-cga_LEFTC endp
+mono_LEFTC endp
 
 ; Move one pixel right
 ; On entry: none
 ; Returns   none
-; Modes 1 and 2 both use this
-cga_RIGHTC proc near private
+; Modes 1, 2 and 3 all use this
+mono_RIGHTC proc near private
 
     push ax
     push cx
@@ -3857,7 +3900,7 @@ cga_RIGHTC proc near private
     pop ax
     ret
 
-cga_RIGHTC endp
+mono_RIGHTC endp
 
 ; Map pixel coordinates to a cursor position as returned by FETCHC
 ; On entry: CX = X coordinate
@@ -3944,8 +3987,8 @@ bit_dup db 00h, 55h, 0AAh, 0FFh
 
 ; Read pixel at current position
 ; Returns: AL = pixel attribute
-; Modes 1 and 2 both use this
-cga_READC proc near private
+; Modes 1, 2 and 3 all use this
+mono_READC proc near private
 
     push bx
     push cx
@@ -3981,12 +4024,12 @@ cga_READC proc near private
     pop bx
     ret
 
-cga_READC endp
+mono_READC endp
 
 ; Write pixel at current location, using current attribute
 ; Returns: none
-; Modes 1 and 2 both use this
-cga_SETC proc near private
+; Modes 1, 2 and 3 all use this
+mono_SETC proc near private
 
     push ax
     push bx
@@ -4014,13 +4057,13 @@ cga_SETC proc near private
     pop ax
     ret
 
-cga_SETC endp
+mono_SETC endp
 
 ; Write multiple pixels starting at current position and proceeding right
 ; On entry: BX = pixel count
 ; Returns:  none
-; Modes 1 and 2 both use this
-cga_NSETCX proc near private
+; Modes 1, 2 and 3 all use this
+mono_NSETCX proc near private
 
     push ax
     push bx
@@ -4035,15 +4078,15 @@ cga_NSETCX proc near private
     ; Start and end of draw
     mov dx, x_coordinate
     add bx, dx
+    cmp bx, cs:Screen_Mode.x_res[di]
+    jb @F
+        mov bx, cs:Screen_Mode.x_res[di]
+    @@:
     cmp cs:Screen_Mode.pixel_size[di], 1
     je @F
         ; Mode 1
         shl bx, 1
         shl dx, 1
-    @@:
-    cmp bx, 640
-    jb @F
-        mov bx, 640
     @@:
     dec bx
 
@@ -4126,7 +4169,7 @@ cga_NSETCX proc near private
     pop ax
     ret
 
-cga_NSETCX endp
+mono_NSETCX endp
 
 ; Set up for bit-blit via NREAD or NWRITE
 ; On entry: BX = pixel array
@@ -4134,8 +4177,8 @@ cga_NSETCX endp
 ;           If C set:
 ;           AL = index to a drawing routine (0-4)
 ;                choices are 0 (OR), 1 (AND), 2 (PRESET), 3 (PSET), 4 (XOR)
-; Modes 1 and 2 both use this
-cga_PGINIT proc near private
+; Modes 1, 2 and 3 all use this
+mono_PGINIT proc near private
 
     mov blit_addr, bx
     mov blit_bits, cx
@@ -4158,7 +4201,7 @@ cga_PGINIT proc near private
     mov cx, blit_bits
     ret
 
-cga_PGINIT endp
+mono_PGINIT endp
 
 draw_table dw draw_or
            dw draw_and
@@ -4208,8 +4251,8 @@ draw_xor endp
 ; Returns: none in registers
 ;          main memory address advanced to next line
 ;          pixels read in packed form into main memory
-; Modes 1 and 2 both use this
-cga_NREAD proc near private
+; Modes 1, 2 and 3 all use this
+mono_NREAD proc near private
 
     push ax
     push bx
@@ -4267,14 +4310,14 @@ cga_NREAD proc near private
     pop ax
     ret
 
-cga_NREAD endp
+mono_NREAD endp
 
 ; Write a line of pixels
 ; On entry: PGINIT complete
 ; Returns: none in registers
 ;          local memory address advanced to the next line
-; Modes 1 and 2 both use this
-cga_NWRITE proc near private
+; Modes 1, 2 and 3 all use this
+mono_NWRITE proc near private
 
     push ax
     push bx
@@ -4409,7 +4452,7 @@ cga_NWRITE proc near private
     pop ax
     ret
 
-cga_NWRITE endp
+mono_NWRITE endp
 
 left_mask_1 db 0FFh, 7Fh, 3Fh, 1Fh, 0Fh, 07h, 03h, 01h
 right_mask_1 db 80h, 0C0h, 0E0h, 0F0h, 0F8h, 0FCh, 0FEh, 0FFh
@@ -4500,8 +4543,8 @@ cga_TUPC endp
 ;           CSAVEA and CSAVEM set to the point where drawing began, in the
 ;           format returned by FETCHC
 ;           Current position updated
-; Modes 1 and 2 both use this
-cga_SCANR proc near private
+; Modes 1, 2 and 3 all use this
+mono_SCANR proc near private
 
     push ax
     push si
@@ -4601,7 +4644,7 @@ cga_SCANR proc near private
     pop ax
     ret
 
-cga_SCANR endp
+mono_SCANR endp
 
 ; Fill pixels to the left until the border color is found
 ; On entry: Setup done with PNTINI
@@ -4609,8 +4652,8 @@ cga_SCANR endp
 ;           BX = number of pixels painted
 ;           CL != 0 if at least one pixel changed
 ;           Current position updated
-; Modes 1 and 2 both use this
-cga_SCANL proc near private
+; Modes 1, 2 and 3 all use this
+mono_SCANL proc near private
 
     push ax
     push dx
@@ -4669,7 +4712,729 @@ cga_SCANL proc near private
     pop ax
     ret
 
-cga_SCANL endp
+mono_SCANL endp
+
+;-----------------------------------------------------------------------------
+; Screen mode 3: Hercules 720x348, 2 colors
+;-----------------------------------------------------------------------------
+
+; Set up mode 3
+herc_SCRSTT_init proc near private
+
+    ; Set BIOS mode 8
+    mov ax, 0008h
+    int 10h
+
+    ; Did it work?
+    push bx
+    mov ah, 0Fh
+    int 10h
+    pop bx
+    cmp al, 8
+    jne @error
+
+    ; We're good.
+    mov text_width, 80
+    mov text_height, 25
+    mov text_attr, 3
+    mov cursor_pos, 0FFFFh
+    mov video_seg, 0B000h
+    clc
+    ret
+
+    ; Oops.
+    @error:
+    stc
+    ret
+
+herc_SCRSTT_init endp
+
+; Scroll window beginning at column AH, row AL,
+; extending through CH columns and CL rows,
+; to column BH, row BL
+; Rows and columns begin at 1
+; Returns: None
+herc_SCROLL proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push bp
+
+    ; Convert coordinates to 0-based
+    dec ah
+    dec al
+    dec bh
+    dec bl
+
+    ; Save the registers
+    mov scroll_c1, ah
+    mov scroll_r1, al
+    mov scroll_c2, bh
+    mov scroll_r2, bl
+    mov scroll_width, ch
+    mov scroll_height, cl
+
+    ; Number of lines to scroll
+    mov ah, 14
+    mov al, scroll_height
+    mul ah
+    mov si, ax
+
+    ; Number of pixels in each line to scroll
+    mov ah, 9
+    mov al, scroll_width
+    mul ah
+    mov bp, ax
+
+    ; Which way should we copy?
+    mov ah, scroll_r1
+    mov al, scroll_c1
+    mov bh, scroll_r2
+    mov bl, scroll_c2
+    cmp ax, bx
+    jb @copy_backwards
+
+        ; Scrolling upward or leftward
+
+        ; Convert the coordinates to addresses:
+        ; "From" location
+        mov ah, 9
+        mov al, scroll_c1
+        mul ah
+        mov cx, ax
+        mov ah, 14
+        mov al, scroll_r1
+        mul ah
+        mov dx, ax
+        call herc_xy_to_pixel
+        mov scroll_from, bx
+        mov scroll_from_pixel, cl
+        ; "To" location
+        mov ah, 9
+        mov al, scroll_c2
+        mul ah
+        mov cx, ax
+        mov ah, 14
+        mov al, scroll_r2
+        mul ah
+        mov dx, ax
+        call herc_xy_to_pixel
+        mov scroll_to, bx
+        mov scroll_to_pixel, cl
+
+        ; Line count to DX
+        mov dx, si
+
+        ; Copy lines
+        @fwd_copy:
+            call herc_copy_line
+            mov bx, scroll_from
+            call herc_next_line
+            mov scroll_from, bx
+            mov bx, scroll_to
+            call herc_next_line
+            mov scroll_to, bx
+        dec dx
+        jnz @fwd_copy
+
+    jmp @end_scroll
+    @copy_backwards:
+
+        ; Scrolling downward or rightward
+
+        ; Convert the coordinates to addresses:
+        ; "From" location
+        mov ah, 9
+        mov al, scroll_c1
+        mul ah
+        mov cx, ax
+        mov ah, 14
+        mov al, scroll_r1
+        add al, scroll_height
+        mul ah
+        mov dx, ax
+        call herc_xy_to_pixel
+        mov scroll_from, bx
+        mov scroll_from_pixel, cl
+        ; "To" location
+        mov ah, 9
+        mov al, scroll_c2
+        mul ah
+        mov cx, ax
+        mov ah, 14
+        mov al, scroll_r2
+        add al, scroll_height
+        mul ah
+        mov dx, ax
+        call herc_xy_to_pixel
+        mov scroll_to, bx
+        mov scroll_to_pixel, cl
+
+        ; Line count to DX
+        mov dx, si
+
+        ; Copy lines
+        @back_copy:
+            mov bx, scroll_from
+            call herc_prev_line
+            mov scroll_from, bx
+            mov bx, scroll_to
+            call herc_prev_line
+            mov scroll_to, bx
+            call herc_copy_line
+        dec dx
+        jnz @back_copy
+
+    @end_scroll:
+
+    pop bp
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+herc_SCROLL endp
+
+; Copy a line while scrolling
+; On entry: scroll_from, scroll_from_pixel, scroll_to and scroll_to_pixel set
+;           BP = number of pixels to copy
+herc_copy_line proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    cld
+
+    ; Copy pixels from frame buffer to scroll_buf
+    mov dx, bp  ; Number of bytes to copy
+    add dx, 7
+    shr dx, 1
+    shr dx, 1
+    shr dx, 1
+
+    mov cl, scroll_from_pixel   ; Shift count
+
+    mov si, scroll_from         ; Copy from and copy to
+    mov di, offset scroll_buf
+    mov ax, ds
+    mov es, ax
+    mov ds, video_seg
+    assume es:DSEG, ds:nothing
+
+    or cl, cl
+    jne @shift_in
+        ; No shift; just copy
+        mov cx, dx
+        rep movsb
+    jmp @end_shift_in
+    @shift_in:
+        ; First partial byte
+        lodsb
+        xor ah, ah
+        shl ax, cl
+        mov ch, al  ; Carry
+        @lshift:
+            lodsb
+            xor ah, ah
+            shl ax, cl
+            or ah, ch   ; Carry in
+            mov ch, al  ; Carry out
+            mov al, ah
+            stosb
+        dec dx
+        jnz @lshift
+    @end_shift_in:
+
+    mov ax, es
+    mov ds, ax
+    assume ds:DSEG, es:nothing
+
+    ; Shift right
+    mov cl, scroll_to_pixel
+    or cl, cl
+    je @end_rshift
+        mov di, offset scroll_buf
+        xor ch, ch  ; Initial carry
+        mov dx, bp
+        add dx, 7
+        shr dx, 1
+        shr dx, 1
+        shr dx, 1
+        @rshift:
+            mov ah, [di]
+            xor al, al
+            shr ax, cl
+            or ah, ch   ; Carry in
+            mov ch, al  ; Carry out
+            mov al, ah
+            stosb
+        dec dx
+        jnz @rshift
+    @end_rshift:
+
+    ; Copy pixels from scroll_buf to frame buffer
+    mov cl, scroll_to_pixel
+    xor ch, ch
+    mov si, cx      ; First pixel to copy
+    mov di, cx
+    add di, bp
+    dec di          ; Last pixel to copy
+    mov cx, di
+    shr cx, 1
+    shr cx, 1
+    shr cx, 1
+    dec cx          ; Number of whole bytes
+    and di, 7
+    mov bh, left_mask_1[si]     ; left and right mask
+    mov bl, right_mask_1[si]
+    mov es, video_seg
+    mov di, scroll_to
+    mov si, offset scroll_buf
+    ; Write the left byte
+    lodsb
+    xor al, es:[di]
+    and al, bh
+    xor al, es:[di]
+    stosb
+    ; Write whole bytes
+    rep movsb
+    ; Write the right byte
+    lodsb
+    xor al, es:[di]
+    and al, bl
+    xor al, es:[di]
+    stosb
+
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+herc_copy_line endp
+
+; Clear the screen or the text window
+; On entry: If the CLS statement has a parameter, C is set and the parameter
+;           is in AL.
+;           Otherwise, C is clear and AL is 0.
+; Returns:  C clear if screen cleared
+;           SCNCLR and GRPINI called
+herc_CLRSCN proc near private
+
+    cmp al, 0
+    stc
+    jne @end
+
+        push ax
+        push bx
+        push cx
+        push dx
+        push di
+        push es
+
+        cld
+
+        ; Number of raster lines to clear
+        mov al, max_line
+        inc al
+        mov ah, 14
+        mul ah
+        mov dx, ax
+
+        ; BX <- limit of addresses to clear
+        xor cx, cx
+        call herc_xy_to_pixel ; address to BX
+
+        mov dl, 4
+        xor ax, ax
+        mov es, video_seg
+        @clear_bank:
+
+            mov di, bx
+            and di, 6000h
+            mov cx, bx
+            and cx, 1FFFh
+            shr cx, 1
+            rep stosw
+
+        call herc_next_line
+        dec dl
+        jnz @clear_bank
+
+        mov cursor_pos, 0FFFFh
+
+        call SCNCLR
+        call GRPINI
+
+        pop es
+        pop di
+        pop dx
+        pop cx
+        pop bx
+        pop ax
+
+        clc
+
+    @end:
+    ret
+
+herc_CLRSCN endp
+
+; On entry: AL = cursor type
+;                0 = off
+;                1 = insert mode (larger)
+;                2 = overwrite mode (smaller)
+;                3 = user mode
+;           DX = cursor position: 1-based (column, row)
+; Returns: none
+herc_CSRDSP proc near private
+
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push es
+
+    ; Develop the address of the text cell
+    push ax
+    mov al, dh
+    dec al
+    mov ah, 9
+    mul ah
+    mov cx, ax
+    mov al, dl
+    dec al
+    mov ah, 14
+    mul ah
+    mov dx, ax
+    call herc_xy_to_pixel ; address to BX; pixel offset to CL
+    mov si, bx
+    mov bx, 0FF80h
+    shr bx, cl            ; bits to flip
+    xchg bl, bh
+    pop ax
+    ; SI has the address of the first line; BX has the bit mask to flip
+
+    ; Remove any existing cursor
+    call herc_cursor_off
+
+    cmp al, 0
+    je @end
+
+        ; Set the cursor shape
+        cmp al, 1
+        jne @two
+            mov ax, 000Dh
+            jmp @on
+        @two:
+        cmp al, 2
+        jne @three
+            mov ax, 0B0Dh
+            jmp @on
+        @three:
+            mov ax, cursor_shape
+        @on:
+
+        ; Display the new cursor
+        mov es, video_seg
+        call herc_cursor_flip
+        mov cursor_pos, si
+        mov cursor_state, ax
+        mov cursor_mask, bx
+
+    @end:
+
+    pop es
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+herc_CSRDSP endp
+
+; Turn off the cursor
+herc_cursor_off proc near private
+
+    cmp cursor_pos, 0FFFFh
+    je @end ; it isn't already off
+        push ax
+        push bx
+        push si
+        push es
+
+        mov es, video_seg
+        mov si, cursor_pos
+        mov ax, cursor_state
+        mov bx, cursor_mask
+        call herc_cursor_flip
+
+        pop es
+        pop si
+        pop bx
+        pop ax
+        mov cursor_pos, 0FFFFh
+    @end:
+
+    ret
+
+herc_cursor_off endp
+
+; Reverse the area of text that the cursor occupies
+; On entry: AH = start line; AL = end_line
+;           ES:SI = address of line 0 of the text cell
+;           BX = FFFF for mode 1, 00FF for mode 2
+herc_cursor_flip proc near private
+
+    push cx
+    push si
+
+    mov cl, 0
+    xchg bx, si
+    @flip:
+
+        cmp cl, ah
+        jb @F
+        cmp cl, al
+        ja @F
+            xor word ptr es:[bx], si
+        @@:
+        inc cl
+        call herc_next_line
+
+    cmp cl, 14
+    jb @flip
+    mov bx, si
+
+    pop si
+    pop cx
+    ret
+
+herc_cursor_flip endp
+
+; Set screen width in columns
+; On entry: AL = number of requested columns
+; Returns C set if error
+herc_SWIDTH proc near private
+
+    ; Width is fixed at 80 columns
+    cmp al, 80
+    jne @error
+        clc
+        ret
+    @error:
+        stc
+        ret
+
+herc_SWIDTH endp
+
+; Set a cursor position retrieved from FETCHC
+; On entry: AL:BX = cursor position
+; Returns:  none
+herc_STOREC proc near private
+
+    push ax
+    push dx
+
+    mov video_pos, bx
+    mov video_bitmask, al
+
+    ; Recover the X coordinate
+    mov ax, bx
+    and ax, 1FFFh   ; exclude the bank bits
+    mov dl, 90
+    div dl          ; AH <- byte offset within line
+    mov dl, ah      ; to 16 bit in DX
+    xor dh, dh
+    shl dx, 1       ; convert to pixel coordinate
+    shl dx, 1
+    shl dx, 1
+    mov al, video_bitmask ; get the lower three bits
+    test al, 0Fh
+    je @F
+        or dx, 4
+    @@:
+    test al, 33h
+    je @F
+        or dx, 2
+    @@:
+    test al, 55h
+    je @F
+        or dx, 1
+    @@:
+
+    mov x_coordinate, dx
+
+    pop dx
+    pop ax
+    ret
+
+herc_STOREC endp
+
+; Move one pixel up
+; On entry: none
+; Returns   none
+herc_UPC proc near private
+
+    xchg bx, video_pos
+    call herc_prev_line
+    xchg bx, video_pos
+    ret
+
+herc_UPC endp
+
+; Move BX to the previous line
+herc_prev_line proc near private
+
+    sub bx, 2000h
+    jns @F
+        add bx, 8000h - 90
+    @@:
+    ret
+
+herc_prev_line endp
+
+; Move one pixel down
+; On entry: none
+; Returns   none
+herc_DOWNC proc near private
+
+    xchg bx, video_pos
+    call herc_next_line
+    xchg bx, video_pos
+    ret
+
+herc_DOWNC endp
+
+; Move BX to the next line
+herc_next_line proc near private
+
+    add bx, 2000h
+    jns @F
+        sub bx, 8000h - 90
+    @@:
+    ret
+
+herc_next_line endp
+
+; Map pixel coordinates to a cursor position as returned by FETCHC
+; On entry: CX = X coordinate
+;           DX = Y coordinate
+; Returns: none
+herc_MAPXYC proc near private
+
+    push ax
+    push bx
+    push cx
+
+    mov x_coordinate, cx
+
+    call herc_xy_to_pixel
+    mov video_pos, bx
+    mov al, 80h
+    shr al, cl
+    mov video_bitmask, al
+
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+herc_MAPXYC endp
+
+; Map pixel coordinates to an address and a shift count
+; On entry: CX = X coordinate
+;           DX = Y coordinate
+; Returns: BX = offset into page
+;          CL = rightward shift count from bit 7
+herc_xy_to_pixel proc near private
+
+    push ax
+    push dx
+
+    ; Right two bits of Y to the bank number
+    ror dx, 1
+    ror dx, 1
+    mov bh, dh
+    shr bh, 1
+    and bx, 6000h
+
+    ; Derive offset from the rest of the Y coordinate
+    mov al, 90
+    mul dl
+    add bx, ax
+
+    ; Byte offset into line
+    mov ax, cx
+    shr ax, 1
+    shr ax, 1
+    shr ax, 1
+    add bx, ax
+
+    ; Pixel shift count
+    and cl, 7
+
+    pop dx
+    pop ax
+    ret
+
+herc_xy_to_pixel endp
+
+; Move current position down with boundary check
+; Returns: C set if moving down would pass the bottom of the screen;
+;          the current position is unchanged in that case
+; This differs from DOWNC only in the boundary check
+herc_TDOWNC proc near private
+
+    xchg bx, video_pos
+    cmp bx, 7E3Ch
+    jae @error
+    call herc_next_line
+    xchg bx, video_pos
+
+    clc
+    ret
+
+@error:
+    xchg bx, video_pos
+    stc
+    ret
+
+herc_TDOWNC endp
+
+herc_TUPC proc near private
+
+    xchg bx, video_pos
+    cmp bx, 90
+    jb @error
+    call herc_prev_line
+    xchg bx, video_pos
+
+    clc
+    ret
+
+@error:
+    xchg bx, video_pos
+    stc
+    ret
+
+herc_TUPC endp
+
 if 0
 ;#############################################################################
 ;RLC Create debug logs
@@ -4890,7 +5655,8 @@ mode_2_SWIDTH endp
 ; Set the pixel attribute to be drawn
 ; On entry: AL = attribute
 ; Returns:  C set if error
-mode_2_SETATR proc near private
+; Modes 2 and 3 both use this
+mono_SETATR proc near private
 
     ; Duplicate lower bit through the entire byte
     and al, 1
@@ -4899,12 +5665,13 @@ mode_2_SETATR proc near private
     clc
     ret
 
-mode_2_SETATR endp
+mono_SETATR endp
 
 ; Set up flood fill algorithm
 ; On entry: AL = border attribute
 ; Returns: C set if error
-mode_2_PNTINI proc near private
+; Modes 2 and 3 both use this
+mono_PNTINI proc near private
 
     ; Duplicate lower bit through the entire byte
     and al, 1
@@ -4913,7 +5680,7 @@ mode_2_PNTINI proc near private
     clc
     ret
 
-mode_2_PNTINI endp
+mono_PNTINI endp
 
 ;-----------------------------------------------------------------------------
 ; Screen mode  7: EGA 320x200, 16 colors
@@ -8983,6 +9750,7 @@ disp_vga = 08h      ; VGA features available
 disp_ega = 04h      ; EGA features available
 disp_cga = 02h      ; CGA features available
 disp_mda = 01h      ; MDA or Hercules installed
+disp_herc = 10h     ; Hercules installed
 herc_size db 0      ; Memory in Kbytes for Hercules
 
 ; Blink state saved at init, to restore on exit
@@ -9022,12 +9790,17 @@ scroll_width db ?
 scroll_height db ?
 scroll_from dw ?
 scroll_to dw ?
+scroll_from_pixel db ?
+scroll_to_pixel db ?
+; Used only by Hercules, and sized for that mode
+scroll_buf db 91 dup (?)
 
 ; Shape of text cursor set by CSRDSP
 cursor_shape dw 0B0Dh ; Initially in overwrite mode
 ; For graphical modes
 cursor_state dw ?
 cursor_pos dw ?
+cursor_mask dw ?
 
 ; Colors set by SETFBC and SETCLR and returned by GETFBC
 foreground_color db 7
