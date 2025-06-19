@@ -4936,106 +4936,142 @@ herc_copy_line proc near private
 
     cld
 
-    ; Copy pixels from frame buffer to scroll_buf
-    mov dx, bp  ; Number of bytes to copy
-    add dx, 7
-    shr dx, 1
-    shr dx, 1
-    shr dx, 1
+    ; Copy directly if the shift counts are equal
+    mov bl, scroll_from_pixel
+    cmp bl, scroll_to_pixel
+    jne @shifting_copy
 
-    mov cl, scroll_from_pixel   ; Shift count
+        ; Set up addresses
+        mov si, scroll_from
+        mov di, scroll_to
+        mov es, video_seg
 
-    mov si, scroll_from         ; Copy from and copy to
-    mov di, offset scroll_buf
-    mov ax, ds
-    mov es, ax
-    mov ds, video_seg
-    assume es:DSEG, ds:nothing
+        ; Copy the left byte
+        xor bh, bh
+        mov ah, left_mask_1[bx]
+        lodsb es:[si]
+        xor al, es:[di]
+        and al, ah
+        xor al, es:[di]
+        stosb
 
-    or cl, cl
-    jne @shift_in
-        ; No shift; just copy
-        mov cx, dx
-        rep movsb
-    jmp @end_shift_in
-    @shift_in:
-        ; First partial byte
-        lodsb
-        xor ah, ah
-        shl ax, cl
-        mov ch, al  ; Carry
-        @lshift:
-            lodsb
-            xor ah, ah
-            shl ax, cl
-            or ah, ch   ; Carry in
-            mov ch, al  ; Carry out
-            mov al, ah
-            stosb
-        dec dx
-        jnz @lshift
-    @end_shift_in:
+        ; Copy whole bytes
+        add bx, bp
+        dec bx
+        mov cx, bx
+        shr cx, 1
+        shr cx, 1
+        shr cx, 1
+        dec cx
+        rep movsb es:[di], es:[si]
 
-    mov ax, es
-    mov ds, ax
-    assume ds:DSEG, es:nothing
+        ; Copy the right byte
+        and bx, 7
+        mov ah, right_mask_1[bx]
+        lodsb es:[si]
+        xor al, es:[di]
+        and al, ah
+        xor al, es:[di]
+        stosb
 
-    ; Shift right
-    mov cl, scroll_to_pixel
-    or cl, cl
-    je @end_rshift
+    jmp @end
+    @shifting_copy:
+
+        ; Copy whole bytes to scroll_buf
+        ; At start: BL = scroll_from_pixel
+        xor bh, bh
+        add bx, bp
+        add bx, 7
+        mov cl, 3
+        shr bx, cl
+        mov cx, bx
+        mov si, scroll_from
         mov di, offset scroll_buf
-        xor ch, ch  ; Initial carry
-        mov dx, bp
-        add dx, 7
-        shr dx, 1
-        shr dx, 1
-        shr dx, 1
-        @rshift:
-            mov ah, [di]
-            xor al, al
-            shr ax, cl
-            or ah, ch   ; Carry in
-            mov ch, al  ; Carry out
-            mov al, ah
-            stosb
-        dec dx
-        jnz @rshift
-    @end_rshift:
+        mov ax, ds
+        mov es, ax
+        mov ds, video_seg
+        assume es:DSEG, ds:nothing
+        rep movsb
+        mov ax, es
+        mov ds, ax
+        assume ds:DSEG, es:nothing
 
-    ; Copy pixels from scroll_buf to frame buffer
-    mov cl, scroll_to_pixel
-    xor ch, ch
-    mov si, cx      ; First pixel to copy
-    mov di, cx
-    add di, bp
-    dec di          ; Last pixel to copy
-    mov cx, di
-    shr cx, 1
-    shr cx, 1
-    shr cx, 1
-    dec cx          ; Number of whole bytes
-    and di, 7
-    mov bh, left_mask_1[si]     ; left and right mask
-    mov bl, right_mask_1[si]
-    mov es, video_seg
-    mov di, scroll_to
-    mov si, offset scroll_buf
-    ; Write the left byte
-    lodsb
-    xor al, es:[di]
-    and al, bh
-    xor al, es:[di]
-    stosb
-    ; Write whole bytes
-    rep movsb
-    ; Write the right byte
-    lodsb
-    xor al, es:[di]
-    and al, bl
-    xor al, es:[di]
-    stosb
+        ; Shift to align with the destination
+        ; The case where shift_from_pixel == shift_to_pixel is handled above
+        ; BX is the number of bytes just copied
+        mov cl, scroll_from_pixel
+        sub cl, scroll_to_pixel
+        jc @shift_right
+            ; Shift left
+            ; CL is the shift count
+            ; DI points to the byte after the copied bytes in scroll_buf
+            dec di
+            std
+            xor ch, ch ; Initial carry
+            @lshift:
+                mov al, [di]
+                xor ah, ah
+                shl ax, cl
+                or al, ch       ; Carry in
+                mov ch, ah      ; Carry out
+                stosb
+            dec bx
+            jnz @lshift
+            cld
+        jmp @end_shift
+        @shift_right:
+            ; Shift right
+            neg cl
+            xor ch, ch ; Initial carry
+            mov di, offset scroll_buf
+            @rshift:
+                mov ah, [di]
+                xor al, al
+                shr ax, cl
+                xchg al, ah
+                or al, ch       ; Carry in
+                mov ch, ah      ; Carry out
+                stosb
+            dec bx
+            jnz @rshift
+            mov [di], bl
+        @end_shift:
 
+        ; Set up addresses
+        mov si, offset scroll_buf
+        mov di, scroll_to
+        mov es, video_seg
+
+        ; Copy the left byte
+        mov bl, scroll_to_pixel
+        xor bh, bh
+        mov ah, left_mask_1[bx]
+        lodsb
+        xor al, es:[di]
+        and al, ah
+        xor al, es:[di]
+        stosb
+
+        ; Copy whole bytes
+        add bx, bp
+        dec bx
+        mov cx, bx
+        shr cx, 1
+        shr cx, 1
+        shr cx, 1
+        dec cx
+        rep movsb
+
+        ; Copy the right byte
+        and bx, 7
+        mov ah, right_mask_1[bx]
+        lodsb
+        xor al, es:[di]
+        and al, ah
+        xor al, es:[di]
+        stosb
+
+    @end:
     pop es
     pop di
     pop si
