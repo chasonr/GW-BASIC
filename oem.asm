@@ -4561,15 +4561,8 @@ mono_SCANR proc near private
 
     ; Skip right
     mov cl, cs:Screen_Mode.pixel_size[di]
-    cmp cl, 1
-    je @mode_2
-        ; Mode 1
-        mov bp, 319
-    jmp @end_mode
-    @mode_2:
-        ; Mode 2
-        mov bp, 639
-    @end_mode:
+    mov bp, cs:Screen_Mode.x_res[di]
+    dec bp
     mov bx, dx
     les di, video_addr
     mov dh, border_attr
