@@ -124,7 +124,6 @@ disp_check proc near private
 
     ; Clear the installation flags
     mov disp_installed, 0
-    mov herc_size, 0
 
     ; Look for an expansion ROM at C000:0000
     mov ax, 0C000h
@@ -170,7 +169,8 @@ disp_check proc near private
         je @end_hercules
             or disp_installed, disp_herc
             inc dh
-            mov herc_size, dh
+            ; Adjust the maximum number of pages
+            mov screen_mode_3[Screen_Mode.num_pages], dh
         @end_hercules:
     @end:
 
@@ -1248,7 +1248,7 @@ screen_mode_2 label word
 screen_mode_3 label word
     dw herc_SCRSTT_init       ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
-    dw generic_SCRSTT_actpage ; SCRSTT_actpage
+    dw herc_SCRSTT_actpage    ; SCRSTT_actpage
     dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
@@ -4748,6 +4748,27 @@ herc_SCRSTT_init proc near private
     ret
 
 herc_SCRSTT_init endp
+
+; Set the active page
+herc_SCRSTT_actpage proc near private
+
+    push ax
+
+    ; Use video_seg to select the page
+    mov page_offset, 0
+    mov page_bitmask, 0FFFFh
+    shr al, 1
+    mov ax, 0B000h
+    jnc @F
+        mov ax, 0B800h
+    @@:
+    mov video_seg, ax
+
+    pop ax
+    clc
+    ret
+
+herc_SCRSTT_actpage endp
 
 ; Scroll window beginning at column AH, row AL,
 ; extending through CH columns and CL rows,
@@ -9751,7 +9772,6 @@ disp_ega = 04h      ; EGA features available
 disp_cga = 02h      ; CGA features available
 disp_mda = 01h      ; MDA or Hercules installed
 disp_herc = 10h     ; Hercules installed
-herc_size db 0      ; Memory in Kbytes for Hercules
 
 ; Blink state saved at init, to restore on exit
 blink_flag db ?
