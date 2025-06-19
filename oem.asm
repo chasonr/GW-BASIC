@@ -125,11 +125,18 @@ disp_check proc near private
     ; Clear the installation flags
     mov disp_installed, 0
 
-    ; Look for an expansion ROM at C000:0000
-    mov ax, 0C000h
-    mov es, ax
-    cmp word ptr es:[0], 0AA55h
-    jne @no_rom
+    ; Look for the sequencer registers at port 03C4
+    mov dx, 03C4h
+    mov al, 05h
+    out dx, al
+    in al, dx
+    cmp al, 05h
+    jne @no_ega
+    mov al, 0Ah
+    out dx, al
+    in al, dx
+    cmp al, 0Ah
+    jne @no_ega
         ; Check for installed VGA
         mov ax, 1A00h
         int 10h
@@ -147,7 +154,7 @@ disp_check proc near private
             mov disp_installed, disp_ega or disp_cga
         @end_ega:
     jmp @end
-    @no_rom:
+    @no_ega:
         ; Check for a CRTC at 03D4
         mov dx, 03D4h
         call check_crtc
