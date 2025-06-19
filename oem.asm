@@ -4936,12 +4936,13 @@ herc_copy_line proc near private
 
     cld
 
-    ; Copy directly if the shift counts are equal
-    mov bl, scroll_from_pixel
-    cmp bl, scroll_to_pixel
+    ; Copy directly if the columns are equal
+    mov al, scroll_c1
+    cmp al, scroll_c2
     jne @shifting_copy
 
         ; Set up addresses
+        mov bl, scroll_from_pixel
         mov si, scroll_from
         mov di, scroll_to
         mov es, video_seg
@@ -4978,7 +4979,7 @@ herc_copy_line proc near private
     @shifting_copy:
 
         ; Copy whole bytes to scroll_buf
-        ; At start: BL = scroll_from_pixel
+        mov bl, scroll_from_pixel
         xor bh, bh
         add bx, bp
         add bx, 7
@@ -4997,10 +4998,10 @@ herc_copy_line proc near private
         assume ds:DSEG, es:nothing
 
         ; Shift to align with the destination
-        ; The case where shift_from_pixel == shift_to_pixel is handled above
         ; BX is the number of bytes just copied
         mov cl, scroll_from_pixel
         sub cl, scroll_to_pixel
+        je @end_shift
         jc @shift_right
             ; Shift left
             ; CL is the shift count
