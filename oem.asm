@@ -130,12 +130,14 @@ disp_check proc near private
     mov al, 05h
     out dx, al
     in al, dx
+    and al, 07h
     cmp al, 05h
     jne @no_ega
-    mov al, 0Ah
+    mov al, 02h
     out dx, al
     in al, dx
-    cmp al, 0Ah
+    and al, 07h
+    cmp al, 02h
     jne @no_ega
         ; Check for installed VGA
         mov ax, 1A00h
