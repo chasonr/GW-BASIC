@@ -1027,22 +1027,16 @@ Screen_Mode struc
     SCRSTT_init    dw ?
     SCRSTT_color   dw ?
     SCRSTT_actpage dw ?
-    SCRSTT_vispage dw ?
     SCROUT_handler dw ?
     SCRINP_handler dw ?
     SCROLL_handler dw ?
     CLRSCN_handler dw ?
-    CLREOL_handler dw ?
-    CSRATR_handler dw ?
     CSRDSP_handler dw ?
     LCPY_handler   dw ?
     SCRATR_handler dw ?
     SETCLR_handler dw ?
     SWIDTH_handler dw ?
-    GETFBC_handler dw ?
     SETFBC_handler dw ?
-    FKYFMT_handler dw ?
-    FKYADV_handler dw ?
     GRPSIZ_handler dw ?
     STOREC_handler dw ?
     FETCHC_handler dw ?
@@ -1102,22 +1096,16 @@ screen_mode_0 label word
     dw mode_0_SCRSTT_init     ; SCRSTT_init
     dw mode_0_SCRSTT_color    ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw mode_0_SCROUT          ; SCROUT_handler
     dw mode_0_SCRINP          ; SCRINP_handler
     dw mode_0_SCROLL          ; SCROLL_handler
     dw generic_CLRSCN         ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw generic_CSRDSP         ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw mode_0_SCRATR          ; SCRATR_handler
     dw mode_0_SETCLR          ; SETCLR_handler
     dw mode_0_SWIDTH          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw mode_0_SETFBC          ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw graphics_stub          ; GRPSIZ_handler
     dw graphics_stub          ; STOREC_handler
     dw graphics_stub          ; FETCHC_handler
@@ -1154,22 +1142,16 @@ screen_mode_1 label word
     dw mode_1_SCRSTT_init     ; SCRSTT_init
     dw mode_1_SCRSTT_color    ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw cga_SCROLL             ; SCROLL_handler
     dw cga_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw cga_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw mode_1_SETCLR          ; SETCLR_handler
     dw mode_1_SWIDTH          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw mode_1_SETFBC          ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw cga_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1206,22 +1188,16 @@ screen_mode_2 label word
     dw mode_2_SCRSTT_init     ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw cga_SCROLL             ; SCROLL_handler
     dw cga_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw cga_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw mode_2_SETCLR          ; SETCLR_handler
     dw mode_2_SWIDTH          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw graphics_stub          ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw cga_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1258,22 +1234,16 @@ screen_mode_3 label word
     dw herc_SCRSTT_init       ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw herc_SCRSTT_actpage    ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw herc_SCROLL            ; SCROLL_handler
     dw herc_CLRSCN            ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw herc_CSRDSP            ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw graphics_stub          ; SETCLR_handler
     dw herc_SWIDTH            ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw graphics_stub          ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw herc_STOREC            ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1310,22 +1280,16 @@ screen_mode_7 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw ega_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw ega_SETCLR             ; SETCLR_handler
     dw ega_SWIDTH_80          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw ega_SETFBC             ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw ega_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1362,22 +1326,16 @@ screen_mode_8 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw ega_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw ega_SETCLR             ; SETCLR_handler
     dw ega_SWIDTH_40          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw ega_SETFBC             ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw ega_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1414,22 +1372,16 @@ screen_mode_9 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw ega_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw ega_SETCLR             ; SETCLR_handler
     dw ega_SWIDTH_40          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw ega_SETFBC             ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw ega_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1466,22 +1418,16 @@ screen_mode_10 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw ega_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw ega_SETCLR             ; SETCLR_handler
     dw ega_SWIDTH_40          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw ega_SETFBC             ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw ega_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1518,22 +1464,16 @@ screen_mode_11 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw ega_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw ega_SETCLR             ; SETCLR_handler
     dw ega_SWIDTH_40          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw ega_SETFBC             ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw ega_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1570,22 +1510,16 @@ screen_mode_12 label word
     dw ega_SCRSTT_init        ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw ega_SCROUT             ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw ega_SCROLL             ; SCROLL_handler
     dw ega_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw ega_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw ega_SETCLR             ; SETCLR_handler
     dw ega_SWIDTH_40          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw ega_SETFBC             ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw ega_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1622,22 +1556,16 @@ screen_mode_13 label word
     dw vga_SCRSTT_init        ; SCRSTT_init
     dw graphics_stub          ; SCRSTT_color
     dw generic_SCRSTT_actpage ; SCRSTT_actpage
-    dw generic_SCRSTT_vispage ; SCRSTT_vispage
     dw generic_SCROUT         ; SCROUT_handler
     dw generic_SCRINP         ; SCRINP_handler
     dw vga_SCROLL             ; SCROLL_handler
     dw vga_CLRSCN             ; CLRSCN_handler
-    dw generic_CLREOL         ; CLREOL_handler
-    dw generic_CSRATR         ; CSRATR_handler
     dw vga_CSRDSP             ; CSRDSP_handler
     dw generic_LCPY           ; LCPY_handler
     dw graphics_stub          ; SCRATR_handler
     dw vga_SETCLR             ; SETCLR_handler
     dw graphics_stub          ; SWIDTH_handler
-    dw generic_GETFBC         ; GETFBC_handler
     dw vga_SETFBC             ; SETFBC_handler
-    dw generic_FKYFMT         ; FKYFMT_handler
-    dw generic_FKYADV         ; FKYADV_handler
     dw generic_GRPSIZ         ; GRPSIZ_handler
     dw vga_STOREC             ; STOREC_handler
     dw generic_FETCHC         ; FETCHC_handler
@@ -1755,7 +1683,7 @@ SCRSTT proc near
         jae @error
         mov al, ah
         xor ah, ah
-        call cs:Screen_Mode.SCRSTT_vispage[di]
+        call SCRSTT_vispage
         jc @error
         mov visible_page, al
     @end_4:
@@ -1777,6 +1705,41 @@ SCRSTT proc near
     ret
 
 SCRSTT endp
+
+; Set the visible page
+; On entry: AL = requested page
+SCRSTT_vispage proc near private
+
+    push bx
+    push cx
+
+    ; Save for comparison afterward
+    mov cl, al
+
+    ; Set the page
+    mov ah, 05h
+    int 10h
+
+    ; Did we get the page we wanted?
+    mov ah, 0Fh
+    int 10h
+    cmp bh, cl
+    jne @error
+
+    ; We got the page we wanted
+    pop cx
+    pop bx
+    clc
+    ret
+
+@error:
+    ; The page was not set
+    pop cx
+    pop bx
+    stc
+    ret
+
+SCRSTT_vispage endp
 
 ; On entry: AL = screen mode to set
 ; Returns: C set if error
@@ -1893,7 +1856,28 @@ CLRSCN endp
 public CLREOL
 CLREOL proc near
 
-    dispatch CLREOL_handler
+    push ax
+    push bx
+    push cx
+    push dx
+
+    call convert_cursor
+    call set_cursor
+
+    mov cl, text_width
+    xor ch, ch
+    sub cl, dl
+    jbe @F      ; Don't try to clear zero or fewer columns
+        mov ax, 0920h
+        mov bx, 0007h
+        int 10h
+    @@:
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
 
 CLREOL endp
 
@@ -1909,7 +1893,26 @@ CLREOL endp
 public CSRATR
 CSRATR proc near
 
-    dispatch CSRATR_handler
+    ; TODO: implement the cursor visible flag
+    test bh, bh
+    je @F
+        cmp bl, 31
+        ja @error
+        mov byte ptr cursor_shape+1, bl
+    @@:
+    test ch, ch
+    je @F
+        cmp cl, 31
+        ja @error
+        mov byte ptr cursor_shape+0, cl
+    @@:
+
+    clc
+    ret
+
+@error:
+    stc
+    ret
 
 CSRATR endp
 
@@ -2037,7 +2040,12 @@ SWIDTH endp
 public GETFBC
 GETFBC proc near
 
-    dispatch GETFBC_handler
+    ; TODO: honor the C flag
+    mov al, foreground_color
+    mov ah, 0
+    mov bl, background_color
+    mov bh, 0
+    ret
 
 GETFBC endp
 
@@ -2062,7 +2070,14 @@ SETFBC endp
 public FKYFMT
 FKYFMT proc near
 
-    dispatch FKYFMT_handler
+    mov bx, offset fkey_format
+    mov byte ptr 0[bx], 6
+    mov byte ptr 1[bx], 10
+    cmp byte ptr 2[bx], 0
+    jne @F
+        mov byte ptr 2[bx], 1
+    @@:
+    ret
 
 FKYFMT endp
 
@@ -2074,7 +2089,39 @@ FKYFMT endp
 public FKYADV
 FKYADV proc near
 
-    dispatch FKYADV_handler
+    push ax
+    jnz @keys_are_on
+        ; Function keys are currently off
+        ; Turn them on and set the first one displayed to 1
+        mov al, text_height
+        sub al, 2
+        mov max_line, al
+        mov fkey_format+2, 1
+        mov ax, 1
+        jmp @end
+    @keys_are_on:
+        ; Function keys are currently on
+        mov al, fkey_format+2 ; First key displayed
+        add al, 5             ; If 40 columns, advance five keys
+        cmp text_width, 40
+        jbe @F
+            add al, 5         ; If 80 columns, turn keys off
+        @@:
+        cmp al, 10
+        jbe @keys_on
+            ; Turn keys off
+            mov al, text_height
+            dec al
+            mov max_line, al
+            mov fkey_format+2, 1
+            xor ax, ax
+            jmp @end
+        @keys_on:
+            mov fkey_format+2, al
+    @end:
+    or ax, ax
+    pop ax
+    ret
 
 FKYADV endp
 
@@ -2429,41 +2476,6 @@ generic_SCRSTT_actpage proc near private
 
 generic_SCRSTT_actpage endp
 
-; Set the visible page
-; On entry: AL = requested page
-generic_SCRSTT_vispage proc near private
-
-    push bx
-    push cx
-
-    ; Save for comparison afterward
-    mov cl, al
-
-    ; Set the page
-    mov ah, 05h
-    int 10h
-
-    ; Did we get the page we wanted?
-    mov ah, 0Fh
-    int 10h
-    cmp bh, cl
-    jne @error
-
-    ; We got the page we wanted
-    pop cx
-    pop bx
-    clc
-    ret
-
-@error:
-    ; The page was not set
-    pop cx
-    pop bx
-    stc
-    ret
-
-generic_SCRSTT_vispage endp
-
 ; Print a character to the screen
 ; On entry:
 ;     AL = character
@@ -2565,71 +2577,6 @@ generic_CLRSCN proc near private
     ret
 
 generic_CLRSCN endp
-
-; Clear to end of line
-; On entry: DH = requested column (1 = left)
-;           DL = requested row (1 = top)
-; Returns: None.
-generic_CLREOL proc near private
-
-    push ax
-    push bx
-    push cx
-    push dx
-
-    call convert_cursor
-    call set_cursor
-
-    mov cl, text_width
-    xor ch, ch
-    sub cl, dl
-    jbe @F      ; Don't try to clear zero or fewer columns
-        mov ax, 0920h
-        mov bx, 0007h
-        int 10h
-    @@:
-
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-generic_CLREOL endp
-
-; Sets the cursor visibility and size according to the parameters to the
-; LOCATE statement.
-; On entry: AH = LOCATE parameter 3 present if nonzero
-;           AL = LOCATE parameter 3: cursor is visible if nonzero
-;           BH = LOCATE parameter 4 present
-;           BL = LOCATE parameter 4: start line of cursor
-;           CH = LOCATE parameter 5 present
-;           CL = LOCATE parameter 5: end line of cursor
-; Returns:  C set if a parameter was out of the valid range
-generic_CSRATR proc near private
-
-    ; TODO: implement the cursor visible flag
-    test bh, bh
-    je @F
-        cmp bl, 31
-        ja @error
-        mov byte ptr cursor_shape+1, bl
-    @@:
-    test ch, ch
-    je @F
-        cmp cl, 31
-        ja @error
-        mov byte ptr cursor_shape+0, cl
-    @@:
-
-    clc
-    ret
-
-@error:
-    stc
-    ret
-
-generic_CSRATR endp
 
 ; On entry: AL = cursor type
 ;                0 = off
@@ -2738,82 +2685,6 @@ generic_LCPY proc near private
     ret
 
 generic_LCPY endp
-
-; Query foreground and background colors
-; On entry: C set to get text colors, clear for graphics colors
-; Returns: AX = foreground color
-;          BX = background color
-generic_GETFBC proc near private
-
-    ; TODO: honor the C flag
-    mov al, foreground_color
-    mov ah, 0
-    mov bl, background_color
-    mov bh, 0
-    ret
-
-generic_GETFBC endp
-
-; Return format for function key display
-; Returns: BX points to a three byte structure
-;          byte 0: characters per key
-;          byte 1: number of keys to display
-;          byte 2: number of first function key
-generic_FKYFMT proc near private
-
-    mov bx, offset fkey_format
-    mov byte ptr 0[bx], 6
-    mov byte ptr 1[bx], 10
-    cmp byte ptr 2[bx], 0
-    jne @F
-        mov byte ptr 2[bx], 1
-    @@:
-    ret
-
-generic_FKYFMT endp
-
-; Advance to the next display format for function keys in response to
-; control-T.
-; On entry: Z clear if function keys are currently displayed
-; Returns:  Z clear if function keys are to be displayed
-;           First key to display is updated if necessary
-generic_FKYADV proc near private
-
-    push ax
-    jnz @keys_are_on
-        ; Function keys are currently off
-        ; Turn them on and set the first one displayed to 1
-        mov al, text_height
-        sub al, 2
-        mov max_line, al
-        mov fkey_format+2, 1
-        mov ax, 1
-        jmp @end
-    @keys_are_on:
-        ; Function keys are currently on
-        mov al, fkey_format+2 ; First key displayed
-        add al, 5             ; If 40 columns, advance five keys
-        cmp text_width, 40
-        jbe @F
-            add al, 5         ; If 80 columns, turn keys off
-        @@:
-        cmp al, 10
-        jbe @keys_on
-            ; Turn keys off
-            mov al, text_height
-            dec al
-            mov max_line, al
-            mov fkey_format+2, 1
-            xor ax, ax
-            jmp @end
-        @keys_on:
-            mov fkey_format+2, al
-    @end:
-    or ax, ax
-    pop ax
-    ret
-
-generic_FKYADV endp
 
 ; Return size of graphics screen
 ; Returns: CX = maximum X coordinate
