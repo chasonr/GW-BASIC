@@ -5035,7 +5035,7 @@ herc_copy_line proc near private
                 stosb
             dec bx
             jnz @rshift
-            mov [di], bl
+            mov [di], ch
         @end_shift:
 
         ; Set up addresses
