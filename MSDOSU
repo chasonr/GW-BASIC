@@ -44,6 +44,9 @@ ENDM
 	C_RNDW=34D		;Random write
 	C_RBR=39D		;Random Block Read
 	C_PARS=41D		;Parse Filename
+	C_FREESPC=36H		;Request free space on drive
+	C_CWD=47H		;Request current directory
+	C_SEAR2=4EH		;Search for file
 
 	FNAML=11D		;number of bytes in Filename with extension
 	DATPSC=128D		;bytes per sector

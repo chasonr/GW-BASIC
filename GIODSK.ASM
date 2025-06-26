@@ -33,7 +33,8 @@ CPM86=0
 	EXTRN	DERNMF:NEAR,DERBFM:NEAR,DERBRN:NEAR,DERFAO:NEAR,FCERR:NEAR
 	EXTRN	DERTMF:NEAR
 	EXTRN	DERFAE:NEAR,DERFNF:NEAR,DERIOE:NEAR,DERDFL:NEAR,DERFOV:NEAR
-	EXTRN	CONIA:NEAR,MAKINT:NEAR,MOVE1:NEAR,$NORMD:NEAR
+	EXTRN	DERIFN:NEAR
+	EXTRN   MOVE1:NEAR,$NORMD:NEAR
 	EXTRN	DEVBOT:NEAR
 DSEG	SEGMENT PUBLIC 'DATASG'		
 	ASSUME DS:DSEG
@@ -767,9 +768,8 @@ NOTLC:
 	SUBTTL  DFSTLD - Fast Binary Program Load (from DISK)
 
 	PUBLIC	DFSTLD
-	EXTRN	OUTLOD:NEAR
 DSEG	SEGMENT PUBLIC 'DATASG'
-	EXTRN	FRETOP:WORD,PTRFIL:WORD
+	EXTRN	PTRFIL:WORD
 DSEG	ENDS
 
 ;DFSTLD - read block of memory from Disk
@@ -931,9 +931,11 @@ FCERRA:	JMP	FCERR
 	SUBTTL  KILL, FILES, NAME commands
 
 	PUBLIC	FILES,KILL,NAME_
-	EXTRN	FRMEVL:NEAR,FRESTR:NEAR,CRDO:NEAR,POLKEY:NEAR
+	EXTRN	FRMEVL:NEAR,FRESTR:NEAR,CRDO:NEAR,CRDONZ:NEAR,POLKEY:NEAR
+	EXTRN	PTRWID:NEAR,PTRGPS:NEAR,STROUT:NEAR
+	EXTRN	WORDS:BYTE
 DSEG	SEGMENT PUBLIC 'DATASG'
-	EXTRN	LINLEN:WORD,BUF:WORD
+	EXTRN	BUF:WORD
 DSEG	ENDS
 
 ;Assumptions:
@@ -946,74 +948,244 @@ DSEG	ENDS
 ; If supplied, all files matching filename or wildcards
 ; are listed.
 ;
-FILES:
-	JE	NOARG		;Brif no filename argument given
-	CALL	NAMFIL		;[SI] points to 1st byte of filename
-				;[CX] = number of bytes in filename
-	CMP	CL,LOW 2
-	JNE	GOTNAM		;branch if not "<drive>:"
-	MOV	AX,WORD PTR 0[SI]	;[AX]=filename
-	CMP	AH,LOW ":"
-	JNE	GOTNAM		;branch if not "<drive>:"
-	MOV	SI,OFFSET FILNA2+2	;[SI] points to buffer for building filename
-	MOV	WORD PTR FILNA2,AX	;Store <drive>: in filename buffer
-	JMP	SHORT ALFILS	;append "*.*" to name
-NOARG:
-	MOV	SI,OFFSET FILNA2	;[SI] points to buffer for building filename
-	XOR	CX,CX
-ALFILS:
-	MOV	WORD PTR 0[SI],OFFSET (400O*".")+"*"
-	MOV	WORD PTR 2[SI],"*"
-	ADD	CX,3		;[CX] = number of bytes in filename
-	MOV	SI,OFFSET FILNA2	;[SI] points to filename
-GOTNAM:
-	CALL	FILFCB		;FILNAM=un-opened FCB for filename
-	MOV	DX,OFFSET FILNA2	;tells OS to put FCB for matching directory
-	CALLOS	C_BUFF		; entries in FILNA2
-	MOV	DX,DI		;[DX] = search FCB (FILNAM)
-	CALLOS	C_SEAR		;Search 1st
-	INC	AL
-	JNZ	FILNXT		;Brif found
-	JMP	DERFNF		; else complain
-FILNXT:
-	CALL	POLKEY		;Allow CTL-C, CTL-S between every filename
-	MOV	SI,OFFSET FILNA2+1	;Point at name
-	MOV	CX,OFFSET FNAML	;Characters in name
-MORNAM:
-	CLD			;Set Post-Increment mode
-	LODSB			;Get character
-	CALL	OUTDO		;Output it
-	CMP	CX,4
-	JNE	NOTEXT		;Not at extension break
-	MOV	AL,BYTE PTR 0[SI]	;Get 1st char of extension
-	CMP	AL,LOW " "
-	JE	PRISPA		;Blank extension - print space
-	MOV	AL,LOW "."	;Print .
-PRISPA:
-	CALL	OUTDO		;Print blank or dot
-NOTEXT:
-	LOOP	MORNAM		;Loop until 11 characters
-EXTRN	PTRWID:NEAR
-	CALL	PTRWID		;[AH]=line width
-	MOV	CH,AH		;[CH]=line width
-EXTRN	PTRGPS:NEAR
-	CALL	PTRGPS		;[AL]=current column
-	ADD	AL,LOW 14D	;Position after next file name
-	CMP	AL,CH
-	JAE	NWFILN		;Force CR/LF
-	MOV	AL,LOW " "
-	CALL	OUTDO
-	JMP	SHORT NEXTFL
-NWFILN:
-	CALL	CRDO		;Type CR/LF
-NEXTFL:
-	MOV	DX,OFFSET FILNAM	;[DX] points to search template
-	XOR	AL,AL
-	CALLOS	C_SEAR+1	;Search next
-	CMP	AL,LOW 255D
-	JNE	FILNXT		;branch if still more
-EXTRN	CRDONZ:NEAR
-	JMP	CRDONZ		;carriage return if not in column 0
+FILES proc near
+
+	jz @noarg                               ; If a file name is given
+	    call NAMFIL                         ;    [SI] points to 1st byte of filename
+	                                        ;    [CX] = number of bytes in filename
+	    or cx, cx
+	    jnz @F
+	        jmp DERIFN                      ;    "Bad file name" if empty
+	    @@:
+	    xor dl, dl                          ;    Assume current drive
+	    cmp cx, 2                           ;    If path starts with letter and ':'
+	    jb @F
+	    cmp byte ptr [si+1], ':'
+	    jne @F
+	        mov dl, [si+0]                  ;        use that drive letter
+	        and dl, 0DFh
+	        sub dl, 'A' - 1
+	    @@:
+	    call print_cwd
+	    cld
+	    mov di, offset BUF                  ;    copy to BUF
+	    rep movsb
+	    cmp byte ptr [di-1], 5Ch            ;    if this ends in a backslash
+	    je @wildcard
+	    cmp byte ptr [di-1], ':'            ;    or a colon
+	    jne @end_wildcard
+	    @wildcard:
+	        mov word ptr [di+0], '*'+100h*'.' ;      append "*.*"
+	        mov byte ptr [di+2], '*'
+	        add di, 3
+	    @end_wildcard:
+	    mov byte ptr [di], 0                ;    null terminate the string
+	jmp @gotnam                             ; else
+	@noarg:
+	    xor dl, dl                          ;     print current directory for current drive
+	    call print_cwd
+	    mov si, offset BUF                  ;     use "*.*"
+	    mov word ptr [si+0], '*'+100h*'.'
+	    mov word ptr [si+2], '*'+100h*0
+	@gotnam:                                ; end if
+
+	push bx
+
+	mov dx, offset FILNA2                   ; transfer area for matches
+	CALLOS C_BUFF
+
+	mov cx, 16H                             ; attributes for search: directory, hidden, system
+	mov dx, offset BUF                      ; filename
+	xor al, al
+	CALLOS C_SEAR2                          ; begin search
+	jnc @F
+	    jmp DERFNF                          ; error if not found
+	@@:
+
+	@filnxt:                                ; repeat
+
+	    mov si, offset FILNA2+30            ;     point to the search result
+	    xor cl, cl
+	    @mornam:                            ;     loop
+	        cld
+	        lodsb                           ;         get a character
+	        or al, al                       ;         break if null
+	        jz @endnam
+	        cmp al, '.'
+	        jne @skip_pad1                  ;         if character is '.'
+	                                        ;             Pad base name to eight characters
+	            jmp @end_pad1               ;             while character count < 8
+	            @pad1:
+	                mov al, ' '
+	                call OUTDO              ;                 print ' '
+	                inc cl                  ;                 advance character count
+	            @end_pad1:
+	            cmp cl, 8                   ;             end while
+	            jb @pad1
+	            mov al, '.'                 ;             character to print is '.'
+	        @skip_pad1:                     ;         end if
+	        call OUTDO                      ;         print the character
+	        inc cl                          ;         advance character count
+	    jmp @mornam                         ;     end loop
+	    @endnam:
+	    jmp @end_pad2
+	    @pad2:                              ;     while character count < 12
+	        mov al, ' '
+	        call OUTDO                      ;         print ' '
+	        inc cl                          ;         advance character count
+	    @end_pad2:
+	    cmp cl, 12                          ;     end while
+	    jb @pad2
+
+	    ; Print the <DIR> marker, or blanks
+	    test byte ptr [FILNA2+15h], 10h     ;     if the file is a directory
+	    mov bx, offset blanks
+	    jz @end_dir
+	        mov bx, offset dir_tag
+	    @end_dir:
+	    call STROUT
+
+	    call PTRWID
+	    mov ch, ah                          ;     [CH]=line width
+	    call PTRGPS                         ;     [AL]=current column
+	    add al, 18                          ;     length of next file name
+	    cmp al, ch
+	    mov al, ' '                         ;     print space if column will fit
+	    jb @next_col
+	        mov al, 0Dh                     ;     else CR
+	    @next_col:
+	    call OUTDO
+
+	    call POLKEY                         ;     Allow CTL-C, CTL-S between every filename
+	    mov dx, offset FILNA2               ;     transfer area for matches
+	    CALLOS C_BUFF
+	    CALLOS C_SEAR2+1                    ;     find next
+	jnc @filnxt                             ; until no more files
+
+	call CRDONZ                             ; print a CR if not at left margin
+
+	; Print free space on requested drive
+	mov al, ' '
+	call OUTDO
+	xor dl, dl                              ; Assume default drive
+	cmp byte ptr [BUF+0], 0
+	je @drive
+	cmp byte ptr [BUF+1], ':'               ; Get drive if one was specified
+	jne @drive
+	    mov dl, byte ptr [BUF+0]
+	    and dl, 0DFh
+	    sub dl, 'A' - 1
+	@drive:
+	CALLOS C_FREESPC                        ; Get free space
+	cmp ax, 0FFFFH                          ; Skip if invalid drive
+	je @end                                 ; (this isn't supposed to happen)
+	    ; AX = sectors per cluster
+	    ; BX = number of free clusters
+	    ; CX = bytes per sector
+	    mul cx                              ; DX:AX = bytes per cluster
+	    ; Bytes per cluster is not supposed to exceed 32768.
+	    ; Keep things simple if it does.
+	    jc @big_cluster
+	        mul bx
+	        mov cx, dx
+	        mov bx, ax
+	    jmp @end_cluster
+	    @big_cluster:
+	        ; Fix cluster size at 65536 bytes
+	        mov cx, bx
+	        xor bx, bx
+	    @end_cluster:
+	    ; CX:BX is the number of free bytes.
+	    ; FIXME: I must be reinventing a wheel here. Find any existing
+	    ; function that converts a 32-bit number to a string.
+	    ; Fill BUF with the free byte string
+	    mov si, offset BUF + 11
+	    mov byte ptr [si], 0
+	    mov di, 10
+	    cld
+	    @decimal:
+	        ; Divide CX:BX by 10
+	        mov ax, cx
+	        xor dx, dx
+	        div di
+	        mov cx, ax
+	        mov ax, bx
+	        div di
+	        mov bx, ax
+	        ; Remainder is in DX
+	        mov al, dl
+	        add al, '0'
+	        dec si
+	        mov [si], al
+	    mov ax, bx
+	    or ax, cx
+	    jnz @decimal
+	@end:
+
+	; Print the bytes free
+	call print_string_ds
+	mov bx, offset WORDS
+	call STROUT
+	call CRDO
+
+	pop bx
+	ret
+
+FILES endp
+
+dir_tag    db "<DIR>", 0
+blanks     db "     ", 0
+
+; Print the current working directory
+; On entry: DL = drive number, or 0 for current drive
+print_cwd proc near private
+
+	push cx
+	push si
+	mov si, offset BUF
+	CALLOS C_CWD
+	jc @end             ; Error; search will also report an error
+	    ; Print drive letter
+	    or dl, dl
+	    jnz @F
+	        CALLOS C_GDRV
+	        mov dl, al
+	        inc dl
+	    @@:
+	    mov al, dl
+	    add al, 'A' - 1
+	    call OUTDO
+	    mov al, ':'
+	    call OUTDO
+	    mov al, 5Ch
+	    call OUTDO
+	    call print_string_ds
+	    call CRDO
+	@end:
+	pop si
+	pop cx
+	ret
+
+print_cwd endp
+
+; Print the string at DS:SI
+; FIXME: STROUT does this for the CS. Is there already a function that does
+; this for the DS?
+print_string_ds proc near private
+
+	push si
+	@print:
+	    cld
+	    lodsb
+	    or al, al
+	    je @end_print
+	    call OUTDO
+	jmp @print
+	@end_print:
+	pop si
+	ret
+
+print_string_ds endp
 
 ;KILL filename
 ; Entry - [BX] = text pointer
@@ -1174,7 +1346,7 @@ FLFCBX:
 ; Entry/exit:   [BX] = text pointer
 
 	PUBLIC	RESET
-	EXTRN	CLSALL:NEAR,TKEYOF:NEAR
+	EXTRN	CLSALL:NEAR
 
 RESET:
 	JNZ	RESETX		;if wasn't EOS
@@ -1216,3 +1388,4 @@ dumy  ENDP
 
 CSEG	ENDS
 	END
+; vim: syntax=masm tabstop=8 noexpandtab
