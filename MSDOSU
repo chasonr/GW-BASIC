@@ -27,27 +27,23 @@ ENDM
 
 ; MSDOS System Call codes
 ;
-	C_PRTO=5D		;Printer output
 	C_DCIO=6D		;Direct console I/O
 	C_REST=13D		;INITIALIZE BDOS
 	C_SDRV=14D		;SET CURRENTLY SELECTED DRIVE
 	C_OPEN=15D
 	C_CLOS=16D
-	C_SEAR=17D		;SEARCH FOR FILE
 	C_DELE=19D
-	C_READ=20D
 	C_MAKE=22D
-	C_RENA=23D
 	C_GDRV=25D		;GET CURRENTLY SELECTED DRIVE
 	C_BUFF=26D		;SET DMA ADDRESS
 	C_RNDR=33D		;Random read
 	C_RNDW=34D		;Random write
 	C_RBR=39D		;Random Block Read
-	C_PARS=41D		;Parse Filename
 	C_FREESPC=36H		;Request free space on drive
 	C_DELE2=41H		;Delete file
 	C_CWD=47H		;Request current directory
 	C_SEAR2=4EH		;Search for file
+	C_RENA2=56H		;Rename file
 
 	FNAML=11D		;number of bytes in Filename with extension
 	DATPSC=128D		;bytes per sector

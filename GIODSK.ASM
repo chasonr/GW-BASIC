@@ -33,7 +33,7 @@ CPM86=0
 	EXTRN	DERNMF:NEAR,DERBFM:NEAR,DERBRN:NEAR,DERFAO:NEAR,FCERR:NEAR
 	EXTRN	DERTMF:NEAR
 	EXTRN	DERFAE:NEAR,DERFNF:NEAR,DERIOE:NEAR,DERDFL:NEAR,DERFOV:NEAR
-	EXTRN	DERIFN:NEAR,DERPNF:NEAR,DERACC:NEAR
+	EXTRN	DERIFN:NEAR,DERPNF:NEAR,DERACC:NEAR,DERRAD:NEAR
 	EXTRN   MOVE1:NEAR,$NORMD:NEAR
 	EXTRN	DEVBOT:NEAR
 DSEG	SEGMENT PUBLIC 'DATASG'		
@@ -1202,81 +1202,44 @@ KILL proc near
 	mov dx, offset BUF
 	CALLOS C_DELE2          ; delete the file
 	jnc @end                ; return if OK
-
-	    cmp ax, 02h
-	    je @no_file
-	    cmp ax, 03h
-	    je @no_path
-	    cmp ax, 05h
-	    je @no_perm
-	    jmp DERIOE          ; "I/O error"
-
+	    jmp dos_error
 	@end:
 	ret
-
-@no_file:
-	jmp DERFNF              ; "File not found"
-@no_path:
-	jmp DERPNF              ; "Path not found"
-@no_perm:
-	jmp DERACC              ; "Path/File Access Error"
 
 KILL endp
 
 ;NAME oldname AS newname
 ; Entry - [BX] = text pointer
 ; Exit  - [BX] = text pointer
-;
-NAME_:
-	CALL	NAMFIL		;[SI] points to 1st byte of old filename
-				;[CX] = number of bytes in filename
-	PUSH	BX		;save text pointer
-	CALL	FILFCB		;FILNAM=un-opened FCB for old filename
-	MOV	DX,OFFSET FILNA2	;tells OS to put FCB for matching directory
-	CALLOS	C_BUFF		; entries in FILNA2
-	MOV	DX,DI		;[DX] = search FCB (FILNAM)
-	CALLOS	C_SEAR		;Search 1st
-	INC	AL
-	JZ	NA_FNF		;File not found
-	MOV	SI,OFFSET FILNAM-F_FCB	;Pretend we are FDB
-	CALL	CHKFOP		;Check for conflict with open files
-				;jumps to error if file is now opened
-	MOV	SI,OFFSET FILNAM	;save old filename in FILNA2
-	MOV	DI,OFFSET FILNA2
-	MOV	CX,OFFSET FNAML+1	;+1 for drive
-	CLD			;Set Post-Increment mode
- REP	MOVSB			;Move drive,name,ext from FILNAM to FILNA2
-	POP	BX		;text pointer
-	CALL	SYNCHR
-	DB	OFFSET "A"	; must see "AS"
-	CALL	SYNCHR
-	DB	OFFSET "S"
-	CALL	NAMFIL		;[SI] points to 1st byte of newfilename
-				;[CX] = number of bytes in filename
-	PUSH	BX		;text pointer
-	CALL	FILFCB		;FILNAM=un-opened FCB for new filename
-	MOV	AL,BYTE PTR FILNAM	;[AL]=drive for New filename
-	OR	AL,AL		;test drive id of New filename
-	JZ	SAMDRV		;branch if default drive
-	CMP	AL,BYTE PTR FILNA2	;Compare with drive of original name
-	JZ	SAMDRV		;branch if both drives are the same
-EXTRN	DERRAD:NEAR
-	JMP	DERRAD		;Rename Across Disks Error
-SAMDRV:
-	MOV	SI,OFFSET FILNAM+1	;move new filename,ext to FILNA2+17
-	MOV	DI,OFFSET FILNA2+17D	;[DI] = dest for new file name
-	MOV	CX,OFFSET FNAML	;No drive code
-	CLD			;Set Post-Increment mode
- REP	MOVSB			;Move name
-	MOV	DX,OFFSET FILNA2	;Point to FCB which contains both filenames
-	CALLOS	C_RENA		;Rename file
-	INC	AL		;error if attempted to create file which
-	JE	NA_FAE		; already existed
-	POP	BX		;text pointer
-	RET	
 
-NA_FNF:	JMP	DERFNF		;file not found
-NA_FAE:	JMP	DERFAE		;file already exists
+NAME_ proc near
+
+	call NAMFIL         ; Get the first file name
+	mov di, offset BUF
+	cld
+	rep movsb           ; Copy and null terminate
+	mov byte ptr [di], 0
+
+	call SYNCHR         ; skip over "AS"
+	db 'A'
+	call SYNCHR
+	db 'S'
+
+	call NAMFIL         ; Get the second file name
+	push bx
+	mov bx, cx
+	mov byte ptr [si+bx], 0 ; Null terminate in place
+	pop bx
+
+	mov di, si          ; New file name
+	mov dx, offset BUF  ; Existing file name
+	CALLOS C_RENA2      ; Rename
+	jnc @end
+	    jmp dos_error
+	@end:
+	ret
+
+NAME_ endp
 
 ;NAMFIL - Scan a file name for NAME, KILL, or FILES command
 ; Entry - [BX] = text pointer
@@ -1297,59 +1260,6 @@ NAMFIL:
 	RET	
 
 ER_NMF:	JMP	DERNMF		;"Bad file name"
-
-;FILFCB - Given filename "d:name:ext", create an un-opened FCB
-; Entry - [SI] = points 1st byte of filename
-;         [CX] = number of bytes in filename string
-; Exit  - FILNAM is un-opened FCB equivalent for filename
-;         [DI] points to 1st byte of FCB FILNAM
-;         [AL] = FF if illegal drive or filename,
-;                 1 if filename contained any "?" or "*" characters
-;                 0 otherwise
-; Uses  - BUF
-;
-FILFCB:
-	MOV	DI,OFFSET BUF	;move filename to BUF buffer
-	CLD			;Set Post-Increment mode
-
-STRTNM:	XOR	AH,AH		;Count of chars in name portion:=0.
-NAMORE:	OR	CX,CX		;Anything left?
-	JE	TRMSTR		;No, go terminate the string in BUF.
-	MOV	AL,BYTE PTR 0[SI]	;Yes, AL:=get next char of string.
-	MOVSB			;Copy it to BUF.
-	DEC	CX		;Decrement the length.
-	CMP	AL,LOW ":"	;Colon indicating we were looking at a
-				;device name?
-	JE	STRTNM		;Yes, restart the count since we are now
-				;looking at the filename.
-	CMP	AL,LOW "."	;No, dot indicating start of extension?
-	JE	FINNAM		;Yes, end of name.
-	CMP	AL,LOW "*"	;The asterisk wild card also terminates the
-	JE	FINNAM		;name for our purposes.
-	CMP	AH,LOW 8D	;Have we already seen 8 name characters?
-	JAE	LNGNAM		;Yes, the excess chars become the extension.
-	INC	AH		;No, increment the name character count.
-	JMP	SHORT NAMORE	;Go look at the next char.
-
-LNGNAM:	MOV	BYTE PTR (-1)[DI],LOW "."	;Put in the dot so the extra chars look
-	MOV	BYTE PTR 0[DI],AL	;like an extension.
-	INC	DI
-FINNAM:	OR	CX,CX		;Anything left?
-	JE	TRMSTR		;No, terminate the string.  (Avoid REP with
-                     ;a zero count.)
- REP	MOVSB			;Copy the remainder of the string to BUF.
-TRMSTR:	MOV	BYTE PTR 0[DI],LOW 0	;store string terminator
-	MOV	SI,OFFSET BUF	;parse 0 terminated filename in BUF
-	MOV	DI,OFFSET FILNAM	; filling FDB FILNAM
-	XOR	AL,AL		; don't skip any separators
-	CALLOS	C_PARS
-	OR	AL,AL		;test for legal filename
-	JNE	FLFCBX		;branch if error or non-empty filename
-	CMP	BYTE PTR FILNAM+1,LOW " "	;test 1st byte of filename
-	JNE	FLFCBX		;branch if non-empty filename
-	DEC	AL		;[AL] = FF (illegal filename)
-FLFCBX:
-	RET	
 
 	SUBTTL  RESET and SYSTEM statements
 ;
@@ -1395,6 +1305,33 @@ DSEG	ENDS
 dumy  PROC    FAR
 	RET			;intra-segment return
 dumy  ENDP
+
+; Jump here on any DOS error
+; On entry: AX = error code
+; Does not return
+
+dos_error proc near private
+
+	cmp ax, 02h
+	je @no_file
+	cmp ax, 03h
+	je @no_path
+	cmp ax, 05h
+	je @no_perm
+        cmp ax, 11h
+        je @other_disk
+	jmp DERIOE              ; "I/O error"
+
+@no_file:
+	jmp DERFNF              ; "File not found"
+@no_path:
+	jmp DERPNF              ; "Path not found"
+@no_perm:
+	jmp DERACC              ; "Path/File Access Error"
+@other_disk:
+        jmp DERRAD              ; "Rename across disk"
+
+dos_error endp
 
 CSEG	ENDS
 	END
