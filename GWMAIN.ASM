@@ -92,6 +92,7 @@ EUROPE=0			;For HHC-EUROPE version
 
 
 	EXTRN	SETGSB:NEAR
+	EXTRN	restore_dir:NEAR
 DSEG	SEGMENT PUBLIC 'DATASG'
 	ASSUME DS:DSEG
 	EXTRN	ONGSBF:WORD
@@ -563,6 +564,7 @@ REPINI:
 ??L005:
 PUBLIC	MAIN
 MAIN:
+	CALL	restore_dir	;restore current directory if changed
 	MOV	BX,65535
 	MOV	CURLIN,BX	;SETUP CURLIN FOR DIRECT MODE
 	MOV	BX,OFFSET ENDPRG
@@ -1651,6 +1653,7 @@ NWSTRT:			;ENTRY FOR "device ON" STATEMENT
 NEWST1:
 	MOV	SAVSTK,SP
 	MOV	SAVTXT,BX	;SAVE TEXT POINTER
+	CALL	restore_dir	;restore current directory if changed
 	EXTRN	CHKINT:NEAR
 	CALL	CHKINT		;get key from keyboard & check for CTL C
 				;if CTL-C, control doesn't return here

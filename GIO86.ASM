@@ -1462,8 +1462,10 @@ ERDNA2:	JMP	DERDNA		;device not available error
 	SUBTTL NAMSCN, PARDEV - Device/Filename scanning routines
 
 	EXTRN	FOPTSZ:NEAR
+	EXTRN	get_cwd:NEAR
 DSEG	SEGMENT PUBLIC 'DATASG'
 	EXTRN	FILOPT:WORD
+	EXTRN	CURDIR:WORD
 DSEG	ENDS
 
 ;T.B.S. - FOPTSZ should eventually be used instead of CMPI CX,^D64, but
@@ -1491,6 +1493,7 @@ NAMSC1:	PUSH	BX		;save text pointer
 	MOV	CL,BYTE PTR 0[BX]
 	MOV	CH,LOW 0	;[CX]=length of string
 	MOV	SI,WORD PTR 1[BX]	;SI points to start of string
+	call	parse_dir
 	CALL	PARDEV		;(AL) = device #
 	MOV	BYTE PTR FILDEV,AL	;Save device #
 	OR	AL,AL
@@ -1566,6 +1569,131 @@ FILSPC:	MOV	AL,LOW " "	;Fill short name with spaces
 	DEC	DX
 	JNZ	FILSPC		;Keep filling
 	JMP	SHORT SCNAM3	;Done with name
+
+; parse_dir - Extract the directory name from a string
+; Entry - (CX) = length of string
+;         (SI) = string address
+; Exit  - [CURDIR] set to the current directory of the relevant disk
+;         Current directory changed to the one in the string
+;         (CX) = remaining count
+;         (SI) = address of remaining string
+
+parse_dir proc near private
+
+	; Look for the last directory separator in the string
+	push di
+	xor di, di              ; DI == 0 if no directory separator found
+	push cx
+	push si
+	cld
+	@find_dir:
+	    lodsb               ; get character
+	    cmp al, 5Ch         ; if it's a backslash
+	    jne @F
+	        lea di,[si-1]   ;     set DI to its address
+	    @@:                 ; end if
+	loop @find_dir
+	pop si
+	pop cx
+
+	; Is there a separator?
+	test di, di
+	jz @end
+
+	    push dx
+
+	    ; Check for a leading drive specifier
+	    xor dl, dl
+	    cmp cx, 2
+	    jb @end_drive
+	    cmp byte ptr [si+1], ':'
+	    jne @end_drive
+	        mov dl, [si]
+	        and dl, 0DFh    ; convert to uppercase
+	    @end_drive:
+
+	    ; Change to that drive
+	    or dl, dl
+	    je @F
+		    dec dl
+	        CALLOS C_SDRV
+	    @@:
+
+	    ; Get the current directory
+	    xor dl, dl
+	    call get_cwd
+
+	    ; Change to the directory in the path string
+	    mov byte ptr [di], 0
+	    mov dx, si
+	    CALLOS C_CHDIR
+
+	    ; Copy the rest of the string to the start, or after the drive
+	    ; specifier if present
+
+	    push si
+
+	    ; DI <- address of remaining string
+	    inc di
+
+	    ; DX <- length of remaining string
+	    mov dx, si
+	    add dx, cx  ; end of string
+	    sub dx, di
+
+	    ; Check for a leading drive specifier
+	    cmp cx, 2
+	    jb @end_drive2
+	    cmp byte ptr [si+1], ':'
+	    jne @end_drive2
+	        add si, 2
+	    @end_drive2:
+
+	    ; Copy
+	    cld
+	    xchg si, di ; SI <- remaining string; DI <- where to copy
+	    mov cx, dx  ; Length of remaining string
+	    rep movsb
+	    ; DI points to the end of the copied string
+
+	    pop si      ; Start of the string
+
+	    ; Length of string without the directory
+	    mov cx, di
+	    sub cx, si
+
+	    pop dx
+	@end:
+	pop di
+	ret
+
+parse_dir endp
+
+; Restore a current directory that was changed by parse_dir
+; Entry - [CURDIR] = current directory when parse_dir was called
+;                    if this is empty, nothing changes
+; Exit  - Directory restored
+
+public restore_dir
+restore_dir proc near
+
+	cmp byte ptr CURDIR[0], 0
+	jz @end
+
+	    push dx
+	    mov dl, byte ptr CURDIR[0]
+	    and dl, 0DFh
+	    sub dl, 'A'
+	    CALLOS C_SDRV
+	    mov dx, offset CURDIR
+	    CALLOS C_CHDIR
+	    mov byte ptr CURDIR[0], 0
+	    pop dx
+
+	@end:
+	ret
+
+restore_dir endp
 
 ;PARDEV - Parse device name from string
 ; Entry - (CX) = length of string
@@ -2275,3 +2403,4 @@ GETVEC:	PUSH	AX
 	RET	
 CSEG	ENDS
 	END
+; vim: syntax=masm tabstop=8 noexpandtab

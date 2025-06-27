@@ -935,7 +935,7 @@ FCERRA:	JMP	FCERR
 	EXTRN	PTRWID:NEAR,PTRGPS:NEAR,STROUT:NEAR
 	EXTRN	WORDS:BYTE
 DSEG	SEGMENT PUBLIC 'DATASG'
-	EXTRN	BUF:WORD
+	EXTRN	BUF2:WORD,CURDIR:WORD
 DSEG	ENDS
 
 ;Assumptions:
@@ -968,7 +968,7 @@ FILES proc near
 	    @@:
 	    call print_cwd
 	    cld
-	    mov di, offset BUF                  ;    copy to BUF
+	    mov di, offset BUF2                 ;    copy to BUF2
 	    rep movsb
 	    cmp byte ptr [di-1], 5Ch            ;    if this ends in a backslash
 	    je @wildcard
@@ -984,7 +984,7 @@ FILES proc near
 	@noarg:
 	    xor dl, dl                          ;     print current directory for current drive
 	    call print_cwd
-	    mov si, offset BUF                  ;     use "*.*"
+	    mov si, offset BUF2                 ;     use "*.*"
 	    mov word ptr [si+0], '*'+100h*'.'
 	    mov word ptr [si+2], '*'+100h*0
 	@gotnam:                                ; end if
@@ -995,7 +995,7 @@ FILES proc near
 	CALLOS C_BUFF
 
 	mov cx, 16H                             ; attributes for search: directory, hidden, system
-	mov dx, offset BUF                      ; filename
+	mov dx, offset BUF2                     ; filename
 	xor al, al
 	CALLOS C_SEAR2                          ; begin search
 	jnc @F
@@ -1068,11 +1068,11 @@ FILES proc near
 	mov al, ' '
 	call OUTDO
 	xor dl, dl                              ; Assume default drive
-	cmp byte ptr [BUF+0], 0
+	cmp byte ptr [BUF2+0], 0
 	je @drive
-	cmp byte ptr [BUF+1], ':'               ; Get drive if one was specified
+	cmp byte ptr [BUF2+1], ':'              ; Get drive if one was specified
 	jne @drive
-	    mov dl, byte ptr [BUF+0]
+	    mov dl, byte ptr [BUF2+0]
 	    and dl, 0DFh
 	    sub dl, 'A' - 1
 	@drive:
@@ -1098,8 +1098,8 @@ FILES proc near
 	    ; CX:BX is the number of free bytes.
 	    ; FIXME: I must be reinventing a wheel here. Find any existing
 	    ; function that converts a 32-bit number to a string.
-	    ; Fill BUF with the free byte string
-	    mov si, offset BUF + 11
+	    ; Fill BUF2 with the free byte string
+	    mov si, offset BUF2 + 11
 	    mov byte ptr [si], 0
 	    mov di, 10
 	    cld
@@ -1136,34 +1136,53 @@ FILES endp
 dir_tag    db "<DIR>", 0
 blanks     db "     ", 0
 
+; Read the current working directory into BUF2
+; On entry: DL = drive number, or 0 for current drive
+public get_cwd
+get_cwd proc near
+
+	push si
+
+	; If current drive requested, determine the current drive
+	or dl, dl
+	jne @F
+	    CALLOS C_GDRV
+	    mov dl, al
+	    inc dl
+	@@:
+
+	; Build the drive prefix
+	mov al, dl
+	add al, 'A' - 1
+	mov byte ptr CURDIR[0], al
+	mov byte ptr CURDIR[1], ':'
+	mov byte ptr CURDIR[2], 5Ch
+	mov byte ptr CURDIR[3], 0
+
+	; Append the directory
+	mov si, offset CURDIR+3
+	CALLOS C_CWD
+	jnc @F
+	    ; leave empty if this fails
+	    mov byte ptr CURDIR[0], 0
+	@@:
+
+	pop si
+	ret
+
+get_cwd endp
+
 ; Print the current working directory
 ; On entry: DL = drive number, or 0 for current drive
 print_cwd proc near private
 
-	push cx
 	push si
-	mov si, offset BUF
-	CALLOS C_CWD
-	jc @end             ; Error; search will also report an error
-	    ; Print drive letter
-	    or dl, dl
-	    jnz @F
-	        CALLOS C_GDRV
-	        mov dl, al
-	        inc dl
-	    @@:
-	    mov al, dl
-	    add al, 'A' - 1
-	    call OUTDO
-	    mov al, ':'
-	    call OUTDO
-	    mov al, 5Ch
-	    call OUTDO
-	    call print_string_ds
-	    call CRDO
-	@end:
+	call get_cwd
+	mov si, offset CURDIR
+	call print_string_ds
+	call CRDO
+	mov byte ptr [CURDIR+0], 0 ; so we don't try to CHDIR later
 	pop si
-	pop cx
 	ret
 
 print_cwd endp
@@ -1194,12 +1213,12 @@ print_string_ds endp
 KILL proc near
 
 	call NAMFIL             ; SI <- address of file name; CX <- length
-	mov di, offset BUF
+	mov di, offset BUF2
 	cld
-	rep movsb               ; copy to BUF
+	rep movsb               ; copy to BUF2
 	mov byte ptr [di], 0    ; null terminate
 
-	mov dx, offset BUF
+	mov dx, offset BUF2
 	CALLOS C_DELE2          ; delete the file
 	jnc @end                ; return if OK
 	    jmp dos_error
@@ -1215,7 +1234,7 @@ KILL endp
 NAME_ proc near
 
 	call NAMFIL         ; Get the first file name
-	mov di, offset BUF
+	mov di, offset BUF2
 	cld
 	rep movsb           ; Copy and null terminate
 	mov byte ptr [di], 0
@@ -1228,12 +1247,14 @@ NAME_ proc near
 	call NAMFIL         ; Get the second file name
 	push bx
 	mov bx, cx
+	mov cl, [si+bx]
 	mov byte ptr [si+bx], 0 ; Null terminate in place
 	pop bx
 
 	mov di, si          ; New file name
-	mov dx, offset BUF  ; Existing file name
+	mov dx, offset BUF2 ; Existing file name
 	CALLOS C_RENA2      ; Rename
+	mov [si+bx], cl     ; Fix up our prior null termination
 	jnc @end
 	    jmp dos_error
 	@end:
@@ -1318,8 +1339,8 @@ dos_error proc near private
 	je @no_path
 	cmp ax, 05h
 	je @no_perm
-        cmp ax, 11h
-        je @other_disk
+	cmp ax, 11h
+	je @other_disk
 	jmp DERIOE              ; "I/O error"
 
 @no_file:
@@ -1329,7 +1350,7 @@ dos_error proc near private
 @no_perm:
 	jmp DERACC              ; "Path/File Access Error"
 @other_disk:
-        jmp DERRAD              ; "Rename across disk"
+	jmp DERRAD              ; "Rename across disk"
 
 dos_error endp
 
