@@ -586,6 +586,11 @@ STMDSX:
 	R2	PALETTE,PALETE
 	R2	LCOPY,LCOPYS
 	R2	CALLS,CALLSL
+	QQ=QQ+3D
+	R	PCOPY
+	QQ=QQ+1D
+	R2	LOCK,LOCKS
+	R	UNLOCK
 ;*************************************************************************
 ;*** The DEBUG entry should be the last entry in the FE Dispatch table ***
 ;*************************************************************************
@@ -606,6 +611,7 @@ FUNDSX:
 	R2	JIS,JISFN
 	R2	KPOS,KPOSFN
 	R2	KLEN,KLENFN
+	R	EXTERR
 
 	PAGE	
 PUBLIC	ALPTAX
@@ -653,12 +659,16 @@ CTABX:
 	Q	COM
 	Q	CIRCLE
 	Q	CALLS
+	Q	CHDIR
 	DB	0
 DTABX:
 	Q	DATE$
 	Q	DRAW
 	DB	0
 ETABX:
+	Q	ENVIRON
+	Q	ERDEV
+	QF	EXTERR
 	DB	0
 FTABX:
 	Q	FIELD
@@ -680,11 +690,13 @@ KTABX:
 LTABX:
 	Q	LSET
 	Q	LCOPY
+	Q	LOCK
 	DB	0
 MTABX:
 	QF	MKI$
 	QF	MKS$
 	QF	MKD$
+	Q	MKDIR
 	DB	0
 NTABX:
 	Q	NAME
@@ -695,24 +707,33 @@ PTABX:
 	Q	PUT
 	Q	PAINT
 	Q	PLAY
+	Q	PALETTE
+	Q	PCOPY
+	Q	PMAP
 	DB	0
 QTABX:
 	DB	0
 RTABX:
 	Q	RSET
 	Q	RESET
+	Q	RMDIR
 	DB	0
 STABX:
 	Q	SYSTEM
+	Q	SHELL
 	DB	0
 TTABX:
 	Q	TIME$
+	Q	TIMER
 	DB	0
 UTABX:
+	Q	UNLOCK
 	DB	0
 VTABX:
+	Q	VIEW
 	DB	0
 WTABX:
+	Q	WINDOW
 	DB	0
 XTABX:
 	DB	0
@@ -985,3 +1006,4 @@ EVALNF:	POP	CX		;Get rid of the return address.
 
 CSEG	ENDS
 	END
+; vim: syntax=masm tabstop=8 noexpandtab
