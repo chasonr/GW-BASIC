@@ -33,7 +33,7 @@ CPM86=0
 	EXTRN	DERNMF:NEAR,DERBFM:NEAR,DERBRN:NEAR,DERFAO:NEAR,FCERR:NEAR
 	EXTRN	DERTMF:NEAR
 	EXTRN	DERFAE:NEAR,DERFNF:NEAR,DERIOE:NEAR,DERDFL:NEAR,DERFOV:NEAR
-	EXTRN	DERIFN:NEAR
+	EXTRN	DERIFN:NEAR,DERPNF:NEAR,DERACC:NEAR
 	EXTRN   MOVE1:NEAR,$NORMD:NEAR
 	EXTRN	DEVBOT:NEAR
 DSEG	SEGMENT PUBLIC 'DATASG'		
@@ -1191,27 +1191,37 @@ print_string_ds endp
 ; Entry - [BX] = text pointer
 ; Exit -  [BX] = text pointer
 ;
-KILL:
-	CALL	NAMFIL		;[SI] points to 1st byte of filename
-				;[CX] = number of bytes in filename
-	CALL	FILFCB		;FILNAM=un-opened FCB for filename
-	PUSH	BX		;save text pointer
-	MOV	DX,OFFSET FILNAM
-	PUSH	DX		;Save FCB pointer
-	CALLOS	C_OPEN		;Open file
-	INC	AL
-	JNZ	KILL2		;Brif file found
-	JMP	DERFNF		;File not found
-KILL2:	POP	DX		;DX points to FCB
-	PUSH	DX
-	CALLOS	C_CLOS		;Close file
-	MOV	SI,OFFSET FILNAM-F_FCB	;Pretend we are FDB
-	CALL	CHKFOP		;Check for conflict with open files
-				;jumps to error if file is now opened
-	POP	DX		;DX points to FCB
-	CALLOS	C_DELE		;Delete file
-	POP	BX		;text pointer
-	RET	
+KILL proc near
+
+	call NAMFIL             ; SI <- address of file name; CX <- length
+	mov di, offset BUF
+	cld
+	rep movsb               ; copy to BUF
+	mov byte ptr [di], 0    ; null terminate
+
+	mov dx, offset BUF
+	CALLOS C_DELE2          ; delete the file
+	jnc @end                ; return if OK
+
+	    cmp ax, 02h
+	    je @no_file
+	    cmp ax, 03h
+	    je @no_path
+	    cmp ax, 05h
+	    je @no_perm
+	    jmp DERIOE          ; "I/O error"
+
+	@end:
+	ret
+
+@no_file:
+	jmp DERFNF              ; "File not found"
+@no_path:
+	jmp DERPNF              ; "Path not found"
+@no_perm:
+	jmp DERACC              ; "Path/File Access Error"
+
+KILL endp
 
 ;NAME oldname AS newname
 ; Entry - [BX] = text pointer

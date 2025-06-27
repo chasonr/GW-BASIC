@@ -45,6 +45,7 @@ ENDM
 	C_RBR=39D		;Random Block Read
 	C_PARS=41D		;Parse Filename
 	C_FREESPC=36H		;Request free space on drive
+	C_DELE2=41H		;Delete file
 	C_CWD=47H		;Request current directory
 	C_SEAR2=4EH		;Search for file
 
