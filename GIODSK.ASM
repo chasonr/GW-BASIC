@@ -928,9 +928,9 @@ PROCHK:	PUSHF			;Save flags
 
 FCERRA:	JMP	FCERR
 	PAGE	
-	SUBTTL  KILL, FILES, NAME commands
+	SUBTTL  KILL, FILES, NAME, CHDIR, MKDIR, RMDIR commands
 
-	PUBLIC	FILES,KILL,NAME_
+	PUBLIC	FILES,KILL,NAME_,CHDIR,MKDIR,RMDIR
 	EXTRN	FRMEVL:NEAR,FRESTR:NEAR,CRDO:NEAR,CRDONZ:NEAR,POLKEY:NEAR
 	EXTRN	PTRWID:NEAR,PTRGPS:NEAR,STROUT:NEAR
 	EXTRN	WORDS:BYTE
@@ -1212,20 +1212,67 @@ print_string_ds endp
 ;
 KILL proc near
 
+	mov ah, C_DELE2
+	jmp file_op
+
+KILL endp
+
+;CHDIR filename
+; Entry - [BX] = text pointer
+; Exit -  [BX] = text pointer
+;
+CHDIR proc near
+
+	mov ah, C_CHDIR
+	jmp file_op
+
+CHDIR endp
+
+;MKDIR filename
+; Entry - [BX] = text pointer
+; Exit -  [BX] = text pointer
+;
+MKDIR proc near
+
+	mov ah, C_MKDIR
+	jmp file_op
+
+MKDIR endp
+
+;RMDIR filename
+; Entry - [BX] = text pointer
+; Exit -  [BX] = text pointer
+;
+RMDIR proc near
+
+	mov ah, C_RMDIR
+	jmp file_op
+
+RMDIR endp
+
+;file_op filename
+; Entry - [BX] = text pointer
+;         [AH] = DOS operation code
+; Exit -  [BX] = text pointer
+;
+file_op proc near private
+
+	push ax
 	call NAMFIL             ; SI <- address of file name; CX <- length
 	mov di, offset BUF2
 	cld
 	rep movsb               ; copy to BUF2
 	mov byte ptr [di], 0    ; null terminate
+	pop ax
 
 	mov dx, offset BUF2
-	CALLOS C_DELE2          ; delete the file
+	CALLOS                  ; call DOS
 	jnc @end                ; return if OK
 	    jmp dos_error
 	@end:
 	ret
 
-KILL endp
+file_op endp
 
 ;NAME oldname AS newname
 ; Entry - [BX] = text pointer

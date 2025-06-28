@@ -40,6 +40,8 @@ ENDM
 	C_RNDW=34D		;Random write
 	C_RBR=39D		;Random Block Read
 	C_FREESPC=36H		;Request free space on drive
+	C_MKDIR=39H		;Make directory
+	C_RMDIR=3AH		;Remove directory
 	C_CHDIR=3BH		;Change directory
 	C_DELE2=41H		;Delete file
 	C_CWD=47H		;Request current directory
@@ -106,3 +108,4 @@ ENDM
 	FCB_RN=F_FCB+33D	;CP/M 2.x Random Record Number
 
         PAGE
+; vim: syntax=masm tabstop=8 noexpandtab
